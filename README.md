@@ -4,8 +4,8 @@
 
 Implementation of [BIP 352](https://github.com/bitcoin/bips/pull/1458) (Silent Payments) in Rust.
 
-Main Fossil repository: https://jirijakes.com/code/rust-bip352
-Git mirror: https://github.com/jirijakes/rust-bip352
+- Main Fossil repository: [https://jirijakes.com/code/rust-bip352](https://jirijakes.com/code/rust-bip352)
+- Git mirror: [https://github.com/jirijakes/rust-bip352](https://github.com/jirijakes/rust-bip352)
 
 ## Status
 

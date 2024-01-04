@@ -1,0 +1,18 @@
+[package]
+name = "bip352"
+version = "0.1.0-alpha.1"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://jirijakes.com/code/rust-bip352"
+description = "Implementation of BIP 352 Silent Payments"
+keywords = ["bitcoin"]
+
+[dependencies]
+bitcoin = "0.30.2"
+bech32 = { git = "https://github.com/jirijakes/rust-bech32", branch = "decoder_fe32_iter" }
+
+[dev-dependencies]
+indexmap = { version = "*", features = ["serde"] }
+serde_json = { version = "*", features = ["preserve_order"] }
+serde = { version = "1.0", features = ["derive"] }
+hex = "*"

@@ -16,4 +16,4 @@ bech32 = "0.9"
 indexmap = { version = "2.1", features = ["serde"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
-hex = "*"
+hex = "0.4"

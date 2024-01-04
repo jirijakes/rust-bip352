@@ -6,6 +6,7 @@ license = "Apache-2.0 OR MIT"
 repository = "https://jirijakes.com/code/rust-bip352"
 description = "Implementation of BIP 352 Silent Payments"
 keywords = ["bitcoin"]
+exclude = ["justfile"]
 
 [dependencies]
 bitcoin = "0.30"

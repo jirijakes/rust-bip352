@@ -9,15 +9,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
 
 [[package]]
-name = "bech32"
-version = "0.10.0-beta"
-source = "git+https://github.com/jirijakes/rust-bech32?branch=decoder_fe32_iter#cb3737ac61a67a4e1e7ba28b1202a01e4102f3b1"
-
-[[package]]
 name = "bip352"
 version = "0.1.0-alpha.1"
 dependencies = [
- "bech32 0.10.0-beta",
+ "bech32",
  "bitcoin",
  "hex",
  "indexmap",
@@ -31,7 +26,7 @@ version = "0.30.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1945a5048598e4189e239d3f809b19bdad4845c4b2ba400d304d2dcf26d2c462"
 dependencies = [
- "bech32 0.9.1",
+ "bech32",
  "bitcoin-private",
  "bitcoin_hashes",
  "hex_lit",

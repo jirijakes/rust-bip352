@@ -9,7 +9,7 @@ keywords = ["bitcoin"]
 
 [dependencies]
 bitcoin = "0.30"
-bech32 = { git = "https://github.com/jirijakes/rust-bech32", branch = "decoder_fe32_iter" }
+bech32 = "0.9"
 
 [dev-dependencies]
 indexmap = { version = "2.1", features = ["serde"] }

@@ -1,12 +1,10 @@
 use std::str::FromStr;
 
-use bech32::primitives::decode::CheckedHrpstring;
-use bech32::{Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
+use bech32::{FromBase32, ToBase32};
 use bitcoin::secp256k1::PublicKey;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SilentPaymentAddress {
-    // TODO: secp256k1 Public Key?
     spend_key: PublicKey,
     scan_key: PublicKey,
 }
@@ -19,33 +17,36 @@ impl SilentPaymentAddress {
         }
     }
 
-    pub fn from_bech32(bech32: CheckedHrpstring) -> Result<Self, String> {
-        let _hrp = bech32.hrp(); // TODO: check; network kind?
+    pub fn from_bech32(s: &str) -> Result<Self, String> {
+        let (_hrp, bytes, _var) = bech32::decode(s).unwrap();
 
-        if let Some((Fe32::Q, fes)) = bech32.fe32_iter_with_witness_version() {
-            let bytes = fes.fes_to_bytes().collect::<Vec<_>>();
-            let (scan_data, spend_data) = bytes.split_at(33);
-
-            // TODO: remove unwrap
-            Ok(SilentPaymentAddress {
-                spend_key: PublicKey::from_slice(spend_data).unwrap(),
-                scan_key: PublicKey::from_slice(scan_data).unwrap(),
-            })
+        if let Some((version, data)) = bytes.split_first() {
+            if version.to_u8() == 0 {
+                let bytes = Vec::from_base32(data).unwrap();
+                let (scan_data, spend_data) = bytes.split_at(33);
+                Ok(SilentPaymentAddress {
+                    spend_key: PublicKey::from_slice(spend_data).unwrap(),
+                    scan_key: PublicKey::from_slice(scan_data).unwrap(),
+                })
+            } else {
+                Err("".to_string())
+            }
         } else {
             Err("".to_string())
         }
     }
 
     pub fn to_bech32(&self) -> String {
-        [self.scan_key.serialize(), self.spend_key.serialize()]
-            .concat()
-            .into_iter()
-            // .copied()
-            .bytes_to_fes()
-            .with_checksum::<Bech32m>(&Hrp::parse("sp").unwrap())
-            .with_witness_version(Fe32::Q)
-            .chars()
-            .collect::<String>()
+        let version = bech32::u5::try_from_u8(0).expect("no problems");
+        let mut data = vec![version];
+
+        data.append(
+            &mut [self.scan_key.serialize(), self.spend_key.serialize()]
+                .concat()
+                .to_base32(),
+        );
+
+        bech32::encode("sp", data, bech32::Variant::Bech32m).unwrap()
     }
 
     pub fn spend_key(&self) -> PublicKey {
@@ -61,9 +62,7 @@ impl FromStr for SilentPaymentAddress {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        CheckedHrpstring::new::<Bech32m>(s)
-            .map_err(|e| e.to_string())
-            .and_then(Self::from_bech32)
+        Self::from_bech32(s)
     }
 }
 

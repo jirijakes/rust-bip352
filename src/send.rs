@@ -49,13 +49,7 @@ impl<'a> SilentPaymentBuilder<'a> {
             key
         };
 
-        let secret_key = self
-            .a
-            .map(|sk| sk.add_tweak(&checked_key.into()).unwrap())
-            .unwrap_or(checked_key);
-
-        self.a.replace(secret_key);
-        self
+        self.add_private_key(checked_key)
     }
 
     pub fn add_private_key(&mut self, key: SecretKey) -> &mut SilentPaymentBuilder<'a> {

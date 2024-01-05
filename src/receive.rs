@@ -6,7 +6,7 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, ScriptBuf, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{InputNonce, SharedSecret, TweakData};
+use crate::{Aggregate, InputNonce, SharedSecret, TweakData};
 
 #[derive(Clone)]
 pub struct Scanning {
@@ -102,7 +102,7 @@ impl Scanning {
 
 pub struct ScanBuilder<'a> {
     scanning: Scanning,
-    a: Option<PublicKey>,
+    input_public_key: Aggregate<PublicKey>,
     input_nonce: InputNonce,
     outputs: Vec<PublicKey>,
     secp: &'a Secp256k1<All>,
@@ -113,20 +113,19 @@ impl<'a> ScanBuilder<'a> {
         ScanBuilder {
             scanning,
             secp,
-            a: Default::default(),
+            input_public_key: Default::default(),
             input_nonce: Default::default(),
             outputs: Default::default(),
         }
     }
 
-    pub fn add_xonly_public_key(&mut self, key: XOnlyPublicKey) -> &mut ScanBuilder<'a> {
-        self.add_public_key(key.public_key(Parity::Even))
+    pub fn add_xonly_public_key(&mut self, key: &XOnlyPublicKey) -> &mut ScanBuilder<'a> {
+        self.add_public_key(&key.public_key(Parity::Even))
     }
 
-    pub fn add_public_key(&mut self, key: PublicKey) -> &mut ScanBuilder<'a> {
-        let public_key = self.a.map(|pk| pk.combine(&key).unwrap()).unwrap_or(key);
-        self.a.replace(public_key);
-        self.input_nonce.add_input_public_key(&public_key).unwrap();
+    pub fn add_public_key(&mut self, public_key: &PublicKey) -> &mut ScanBuilder<'a> {
+        self.input_public_key.add_key(public_key);
+        self.input_nonce.add_input_public_key(public_key).unwrap();
         self
     }
 
@@ -143,7 +142,7 @@ impl<'a> ScanBuilder<'a> {
     pub fn xxx(self) -> HashMap<XOnlyPublicKey, TweakData> {
         let shared_secret = SharedSecret::new(
             self.input_nonce.hash().unwrap(),
-            self.a.unwrap(),
+            self.input_public_key.get().unwrap(),
             self.scanning.scan_key,
             self.secp,
         );

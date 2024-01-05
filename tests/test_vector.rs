@@ -69,9 +69,9 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             });
             r.given.input_pub_keys.iter().for_each(|pk| {
                 if pk.len() == 66 {
-                    builder.add_public_key(pk.parse().unwrap());
+                    builder.add_public_key(&pk.parse().unwrap());
                 } else {
-                    builder.add_xonly_public_key(pk.parse().unwrap());
+                    builder.add_xonly_public_key(&pk.parse().unwrap());
                 }
             });
 

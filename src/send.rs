@@ -4,7 +4,7 @@ use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
-use crate::{InputNonce, SharedSecret};
+use crate::{Aggregate, InputNonce, SharedSecret};
 
 pub struct SilentPayment {}
 
@@ -16,7 +16,7 @@ impl SilentPayment {
 
 pub struct SilentPaymentBuilder<'a> {
     recipients: Vec<SilentPaymentAddress>,
-    a: Option<SecretKey>,
+    input_secret_key: Aggregate<SecretKey>,
     input_nonce: InputNonce,
     secp: &'a Secp256k1<All>,
 }
@@ -26,7 +26,7 @@ impl<'a> SilentPaymentBuilder<'a> {
         SilentPaymentBuilder {
             secp,
             recipients: Default::default(),
-            a: Default::default(),
+            input_secret_key: Default::default(),
             input_nonce: Default::default(),
         }
     }
@@ -52,13 +52,9 @@ impl<'a> SilentPaymentBuilder<'a> {
     }
 
     pub fn add_private_key(&mut self, key: SecretKey) -> &mut SilentPaymentBuilder<'a> {
-        let secret_key = self
-            .a
-            .map(|sk| sk.add_tweak(&key.into()).unwrap()) // TODO: unwrap
-            .unwrap_or(key);
-        self.a.replace(secret_key);
+        self.input_secret_key.add_key(&key);
         self.input_nonce
-            .add_input_public_key(&secret_key.public_key(self.secp))
+            .add_input_public_key(&key.public_key(self.secp))
             .unwrap();
         self
     }
@@ -71,6 +67,7 @@ impl<'a> SilentPaymentBuilder<'a> {
     #[must_use]
     pub fn build(self) -> Vec<ScriptBuf> {
         let input_nonce = self.input_nonce.hash().unwrap();
+        let input_secret_key = self.input_secret_key.get().unwrap();
 
         let mut groups: HashMap<PublicKey, Vec<(usize, PublicKey)>> = HashMap::new();
 
@@ -86,7 +83,7 @@ impl<'a> SilentPaymentBuilder<'a> {
             .into_iter()
             .flat_map(|(b_scan, b_ms)| {
                 let shared_secret =
-                    SharedSecret::new(input_nonce, b_scan, self.a.unwrap(), self.secp);
+                    SharedSecret::new(input_nonce, b_scan, input_secret_key, self.secp);
 
                 b_ms.into_iter()
                     .enumerate()

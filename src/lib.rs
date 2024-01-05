@@ -10,8 +10,8 @@ use bitcoin::{ScriptBuf, TxIn, TxOut};
 
 pub mod address;
 pub mod outpoints;
-pub mod receiver;
-pub mod sender;
+pub mod receive;
+pub mod send;
 pub mod wallet;
 
 pub struct TweakData {

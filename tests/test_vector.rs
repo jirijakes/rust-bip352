@@ -1,6 +1,6 @@
 use bip352::address::SilentPaymentAddress;
-use bip352::receiver::Scanning;
-use bip352::sender::SilentPayment;
+use bip352::receive::Scanning;
+use bip352::send::SilentPayment;
 use bip352::silent_payment_signing_key;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::{sha256, Hash};

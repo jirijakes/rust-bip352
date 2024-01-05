@@ -88,7 +88,7 @@ pub enum InputNonceError {
 }
 
 /// Marks keys, public or secret, that can be added together.
-pub(crate) trait Key: Sized {
+trait Key: Sized {
     /// Adds two keys together.
     ///
     /// # Errors
@@ -110,7 +110,7 @@ impl Key for SecretKey {
 }
 
 /// Holds a key that is being aggregated with other keys.
-pub(crate) struct Aggregate<K>(Option<K>);
+struct Aggregate<K>(Option<K>);
 
 impl<K> Aggregate<K> {
     /// Adds another key to the aggregate.
@@ -119,7 +119,7 @@ impl<K> Aggregate<K> {
     ///
     /// Returns `None` if the new key could not be aggegated due to the result
     /// not being a valid key.
-    pub(crate) fn add_key(&mut self, key: &K) -> Option<&mut Self>
+    fn add_key(&mut self, key: &K) -> Option<&mut Self>
     where
         K: Key + Clone,
     {
@@ -140,7 +140,7 @@ impl<K> Aggregate<K> {
     /// # Errors
     ///
     /// Returns `None` if no key was successfully added.
-    pub(crate) fn get(self) -> Option<K> {
+    fn get(self) -> Option<K> {
         self.0
     }
 }

@@ -12,7 +12,6 @@ pub mod address;
 pub mod outpoints;
 pub mod receive;
 pub mod send;
-pub mod wallet;
 
 pub struct TweakData {
     tweak: Scalar,

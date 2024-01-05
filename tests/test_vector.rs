@@ -1,4 +1,3 @@
-use bip352::address::SilentPaymentAddress;
 use bip352::receive::Scanning;
 use bip352::send::SilentPayment;
 use bip352::silent_payment_signing_key;
@@ -117,13 +116,12 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
 
 fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
     sending.iter().for_each(|s| {
-        let mut builder = SilentPayment::builder(secp);
+        let mut payment = SilentPayment::new(secp);
         s.given.recipients.iter().for_each(|(addr, _amount)| {
-            let address = SilentPaymentAddress::from_str(addr).unwrap();
-            builder.add_recipient(address);
+            payment.add_recipient(addr.parse().unwrap());
         });
         s.given.outpoints.iter().for_each(|(txid, vout)| {
-            builder.add_outpoint(OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
+            payment.add_outpoint(OutPoint::new(txid.parse().unwrap(), *vout));
         });
         s.given
             .input_priv_keys
@@ -131,15 +129,14 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
             .for_each(|(key, is_taproot)| {
                 let key = SecretKey::from_slice(&Vec::from_hex(key).unwrap()).unwrap();
                 if *is_taproot {
-                    builder.add_taproot_private_key(key);
+                    payment.add_taproot_private_key(key);
                 } else {
-                    builder.add_private_key(key);
+                    payment.add_private_key(key);
                 }
             });
 
-        let silent_payment: Vec<ScriptBuf> = builder.build();
-
-        silent_payment
+        payment
+            .generate_output_scripts()
             .into_iter()
             .zip(s.expected.outputs.iter())
             .for_each(|(given_script, (expected_key, _))| {

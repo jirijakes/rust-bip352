@@ -6,24 +6,16 @@ use bitcoin::{OutPoint, ScriptBuf};
 use crate::address::SilentPaymentAddress;
 use crate::{Aggregate, InputNonce, SharedSecret};
 
-pub struct SilentPayment {}
-
-impl SilentPayment {
-    pub fn builder(secp: &Secp256k1<All>) -> SilentPaymentBuilder {
-        SilentPaymentBuilder::new(secp)
-    }
-}
-
-pub struct SilentPaymentBuilder<'a> {
+pub struct SilentPayment<'a> {
     recipients: Vec<SilentPaymentAddress>,
     input_secret_key: Aggregate<SecretKey>,
     input_nonce: InputNonce,
     secp: &'a Secp256k1<All>,
 }
 
-impl<'a> SilentPaymentBuilder<'a> {
-    pub fn new(secp: &Secp256k1<All>) -> SilentPaymentBuilder {
-        SilentPaymentBuilder {
+impl<'a> SilentPayment<'a> {
+    pub fn new(secp: &Secp256k1<All>) -> SilentPayment {
+        SilentPayment {
             secp,
             recipients: Default::default(),
             input_secret_key: Default::default(),
@@ -31,15 +23,12 @@ impl<'a> SilentPaymentBuilder<'a> {
         }
     }
 
-    pub fn add_recipient(
-        &mut self,
-        address: SilentPaymentAddress,
-    ) -> &mut SilentPaymentBuilder<'a> {
+    pub fn add_recipient(&mut self, address: SilentPaymentAddress) -> &mut SilentPayment<'a> {
         self.recipients.push(address);
         self
     }
 
-    pub fn add_taproot_private_key(&mut self, key: SecretKey) -> &mut SilentPaymentBuilder<'a> {
+    pub fn add_taproot_private_key(&mut self, key: SecretKey) -> &mut SilentPayment<'a> {
         let (_, y_parity) = key.public_key(self.secp).x_only_public_key();
 
         let checked_key = if y_parity == Parity::Odd {
@@ -51,7 +40,7 @@ impl<'a> SilentPaymentBuilder<'a> {
         self.add_private_key(checked_key)
     }
 
-    pub fn add_private_key(&mut self, key: SecretKey) -> &mut SilentPaymentBuilder<'a> {
+    pub fn add_private_key(&mut self, key: SecretKey) -> &mut SilentPayment<'a> {
         self.input_secret_key.add_key(&key);
         self.input_nonce
             .add_input_public_key(&key.public_key(self.secp))
@@ -59,13 +48,13 @@ impl<'a> SilentPaymentBuilder<'a> {
         self
     }
 
-    pub fn add_outpoint(&mut self, outpoint: OutPoint) -> &mut SilentPaymentBuilder<'a> {
+    pub fn add_outpoint(&mut self, outpoint: OutPoint) -> &mut SilentPayment<'a> {
         self.input_nonce.add_outpoint(&outpoint);
         self
     }
 
     #[must_use]
-    pub fn build(self) -> Vec<ScriptBuf> {
+    pub fn generate_output_scripts(self) -> Vec<ScriptBuf> {
         let input_nonce = self.input_nonce.hash().unwrap();
         let input_secret_key = self.input_secret_key.get().unwrap();
 

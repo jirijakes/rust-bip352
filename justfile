@@ -49,3 +49,13 @@ prepare:
 [no-exit-message]
 check:
     cargo +nightly fmt --check
+
+# Search Rust files
+[no-exit-message]
+rg term:
+    rg -trust "{{term}}"
+
+# Search Rust files case insensitively
+[no-exit-message]
+rgi term:
+    rg -trust -i "{{term}}"

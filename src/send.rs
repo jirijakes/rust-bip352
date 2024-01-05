@@ -4,8 +4,7 @@ use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
-use crate::outpoints::OutPoints;
-use crate::SharedSecret;
+use crate::{InputNonce, SharedSecret};
 
 pub struct SilentPayment {}
 
@@ -18,7 +17,7 @@ impl SilentPayment {
 pub struct SilentPaymentBuilder<'a> {
     recipients: Vec<SilentPaymentAddress>,
     a: Option<SecretKey>,
-    outpoints: OutPoints,
+    input_nonce: InputNonce,
     secp: &'a Secp256k1<All>,
 }
 
@@ -28,7 +27,7 @@ impl<'a> SilentPaymentBuilder<'a> {
             secp,
             recipients: Default::default(),
             a: Default::default(),
-            outpoints: Default::default(),
+            input_nonce: Default::default(),
         }
     }
 
@@ -58,17 +57,20 @@ impl<'a> SilentPaymentBuilder<'a> {
             .map(|sk| sk.add_tweak(&key.into()).unwrap()) // TODO: unwrap
             .unwrap_or(key);
         self.a.replace(secret_key);
+        self.input_nonce
+            .add_input_public_key(&secret_key.public_key(self.secp))
+            .unwrap();
         self
     }
 
     pub fn add_outpoint(&mut self, outpoint: OutPoint) -> &mut SilentPaymentBuilder<'a> {
-        self.outpoints.add(outpoint);
+        self.input_nonce.add_outpoint(&outpoint);
         self
     }
 
     #[must_use]
-    pub fn build(&mut self) -> Vec<ScriptBuf> {
-        let outpoints_hash = self.outpoints.hash();
+    pub fn build(self) -> Vec<ScriptBuf> {
+        let input_nonce = self.input_nonce.hash().unwrap();
 
         let mut groups: HashMap<PublicKey, Vec<(usize, PublicKey)>> = HashMap::new();
 
@@ -84,7 +86,7 @@ impl<'a> SilentPaymentBuilder<'a> {
             .into_iter()
             .flat_map(|(b_scan, b_ms)| {
                 let shared_secret =
-                    SharedSecret::new(outpoints_hash, b_scan, self.a.unwrap(), self.secp);
+                    SharedSecret::new(input_nonce, b_scan, self.a.unwrap(), self.secp);
 
                 b_ms.into_iter()
                     .enumerate()

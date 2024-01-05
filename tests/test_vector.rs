@@ -65,7 +65,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
 
         if let Some(mut builder) = scanning.scan_script_pubkeys(&given_outputs, secp) {
             r.given.outpoints.iter().for_each(|(txid, vout)| {
-                builder.add_outpoint(OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
+                builder.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
             });
             r.given.input_pub_keys.iter().for_each(|pk| {
                 if pk.len() == 66 {

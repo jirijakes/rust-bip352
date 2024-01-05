@@ -1,17 +1,155 @@
 //! This library provides functions for working with sending and receiving
 //! Bitcoin Silent Payments according to BIP 352 proposal.
+use bitcoin::consensus::serialize;
 use bitcoin::hashes::{sha256, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
     Error as SecpError, KeyPair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
     Verification, XOnlyPublicKey,
 };
-use bitcoin::{ScriptBuf, TxIn, TxOut};
+use bitcoin::{OutPoint, ScriptBuf, TxIn, TxOut};
 
 pub mod address;
-pub mod outpoints;
 pub mod receive;
 pub mod send;
+
+#[derive(Default)]
+pub struct InputNonce {
+    /// Holds the least (so far) outpoint bytes.
+    least_outpoint: Option<[u8; 36]>,
+
+    // TODO: Remove when test vector updated.
+    #[deprecated = "specification changed"]
+    outpoints: Vec<[u8; 36]>,
+
+    /// Holds aggregated input public key.
+    public_key: Aggregate<PublicKey>,
+}
+
+impl InputNonce {
+    /// Creates new, empty input nonce.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers new outpoint that is subject of calculation of the input nonce.
+    pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut InputNonce {
+        let bytes: [u8; 36] = serialize(outpoint)
+            .try_into()
+            .expect("outpoint serializes to 36 bytes");
+        self.add_outpoint_serialized(bytes)
+    }
+
+    /// Registers new already-serialized outpoint that is subject of calculation of the input nonce.
+    pub fn add_outpoint_serialized(&mut self, bytes: [u8; 36]) -> &mut InputNonce {
+        match self.least_outpoint.as_ref() {
+            Some(least) if least <= &bytes => {}
+            _ => {
+                self.least_outpoint.replace(bytes);
+            }
+        };
+
+        // TODO: Removev when test vector updated.
+        // keep the outpoints ordered
+        let index = self.outpoints.partition_point(|&p| p < bytes);
+        self.outpoints.insert(index, bytes);
+
+        self
+    }
+
+    pub fn add_input_public_key(&mut self, public_key: &PublicKey) -> Option<&mut InputNonce> {
+        self.public_key.add_key(public_key)?;
+        Some(self)
+    }
+
+    /// Returns input nonce.
+    pub fn hash(self) -> Result<Scalar, InputNonceError> {
+        let mut engine = sha256::Hash::engine();
+
+        // TODO: Remove when test vector updated.
+        self.outpoints.iter().for_each(|o| engine.input(o));
+
+        // TODO: Uncomment when test vector updated
+        // let outpoint = self.least_outpoint.ok_or(InputNonceError::NoOutPoint)?;
+        // engine.input(&outpoint);
+        // let public_key = self.public_key.get().ok_or(InputNonceError::NoPublicKey)?;
+        // engine.input(&public_key.serialize());
+
+        let hash = sha256::Hash::from_engine(engine);
+        Scalar::from_be_bytes(hash.to_byte_array()).map_err(|_| InputNonceError::InvalidValue)
+    }
+}
+
+#[derive(Debug)]
+pub enum InputNonceError {
+    NoOutPoint,
+    NoPublicKey,
+    InvalidValue,
+}
+
+/// Marks keys, public or secret, that can be added together.
+pub(crate) trait Key: Sized {
+    /// Adds two keys together.
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if the result would not be a valid key.
+    fn plus(&self, other: &Self) -> Option<Self>;
+}
+
+impl Key for PublicKey {
+    fn plus(&self, other: &Self) -> Option<Self> {
+        self.combine(other).ok()
+    }
+}
+
+impl Key for SecretKey {
+    fn plus(&self, other: &Self) -> Option<Self> {
+        self.add_tweak(&(*other).into()).ok()
+    }
+}
+
+/// Holds a key that is being aggregated with other keys.
+pub(crate) struct Aggregate<K>(Option<K>);
+
+impl<K> Aggregate<K> {
+    /// Adds another key to the aggregate.
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if the new key could not be aggegated due to the result
+    /// not being a valid key.
+    pub(crate) fn add_key(&mut self, key: &K) -> Option<&mut Self>
+    where
+        K: Key + Clone,
+    {
+        match self.0.as_ref() {
+            Some(agg) => {
+                self.0.replace(agg.plus(key)?);
+                Some(self)
+            }
+            None => {
+                self.0.replace(key.clone());
+                Some(self)
+            }
+        }
+    }
+
+    /// Returns result of the aggregation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if no key was successfully added.
+    pub(crate) fn get(self) -> Option<K> {
+        self.0
+    }
+}
+
+impl<K> Default for Aggregate<K> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
 
 pub struct TweakData {
     tweak: Scalar,

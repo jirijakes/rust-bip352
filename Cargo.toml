@@ -8,6 +8,11 @@ description = "Implementation of BIP 352 Silent Payments"
 keywords = ["bitcoin"]
 exclude = ["justfile"]
 
+[features]
+default = ["send", "receive"]
+send = []
+receive = []
+
 [dependencies]
 bitcoin = "0.30"
 

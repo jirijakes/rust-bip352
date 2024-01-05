@@ -10,7 +10,9 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, ScriptBuf, TxIn, TxOut};
 
 pub mod address;
+#[cfg(feature = "receive")]
 pub mod receive;
+#[cfg(feature = "send")]
 pub mod send;
 
 #[derive(Default)]

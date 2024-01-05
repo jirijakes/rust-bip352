@@ -1,5 +1,3 @@
-use bip352::receive::Scanning;
-use bip352::send::SilentPayment;
 use bip352::silent_payment_signing_key;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::{sha256, Hash};
@@ -13,6 +11,7 @@ use std::io::BufReader;
 use std::str::FromStr;
 
 #[test]
+#[cfg(any(feature = "receive", feature = "send"))]
 fn bip352_test_vector() {
     let f = File::open("tests/data/send_and_receive_test_vectors.json").unwrap();
     let reader = BufReader::new(f);
@@ -23,12 +22,17 @@ fn bip352_test_vector() {
         .unwrap()
         .iter()
         .for_each(|t| {
+            #[cfg(feature = "receive")]
             test_receiving(&t.receiving, &t.comment, &secp);
+            #[cfg(feature = "send")]
             test_sending(&t.sending, &t.comment, &secp);
         });
 }
 
+#[cfg(feature = "receive")]
 fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
+    use bip352::receive::Scanning;
+
     receiving.iter().for_each(|r| {
         let spend_key =
             SecretKey::from_slice(&Vec::from_hex(&r.given.spend_priv_key).unwrap()).unwrap();
@@ -114,7 +118,10 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     });
 }
 
+#[cfg(feature = "send")]
 fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
+    use bip352::send::SilentPayment;
+
     sending.iter().for_each(|s| {
         let mut payment = SilentPayment::new(secp);
         s.given.recipients.iter().for_each(|(addr, _amount)| {

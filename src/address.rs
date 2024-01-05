@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use bech32::{FromBase32, ToBase32};
+use bitcoin::bech32::{self, u5, FromBase32, ToBase32, Variant};
 use bitcoin::secp256k1::PublicKey;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -37,7 +37,7 @@ impl SilentPaymentAddress {
     }
 
     pub fn to_bech32(&self) -> String {
-        let version = bech32::u5::try_from_u8(0).expect("no problems");
+        let version = u5::try_from_u8(0).expect("no problems");
         let mut data = vec![version];
 
         data.append(
@@ -46,7 +46,7 @@ impl SilentPaymentAddress {
                 .to_base32(),
         );
 
-        bech32::encode("sp", data, bech32::Variant::Bech32m).unwrap()
+        bech32::encode("sp", data, Variant::Bech32m).unwrap()
     }
 
     pub fn spend_key(&self) -> PublicKey {

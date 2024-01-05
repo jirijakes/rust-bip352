@@ -86,12 +86,9 @@ impl<'a> SilentPaymentBuilder<'a> {
                     SharedSecret::new(input_nonce, b_scan, input_secret_key, self.secp);
 
                 b_ms.into_iter()
-                    .enumerate()
-                    .map(|(k, (index, b_m))| {
-                        (
-                            index,
-                            shared_secret.destination_output(b_m, k as u32, self.secp),
-                        )
+                    .zip(0..)
+                    .map(|((index, b_m), k)| {
+                        (index, shared_secret.destination_output(b_m, k, self.secp))
                     })
                     .collect::<Vec<_>>()
             })

@@ -47,11 +47,13 @@
 //! ```
 use std::collections::HashMap;
 
+use bitcoin::bip32::{ExtendedPrivKey, Fingerprint};
+use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputNonce, SharedSecret};
+use crate::{input_public_key, Aggregate, InputNonce, SharedSecret};
 
 pub struct SilentPayment<'a> {
     recipients: Vec<SilentPaymentAddress>,
@@ -98,6 +100,51 @@ impl<'a> SilentPayment<'a> {
     pub fn add_outpoint(&mut self, outpoint: OutPoint) -> &mut SilentPayment<'a> {
         self.input_nonce.add_outpoint(&outpoint);
         self
+    }
+
+    /// Registers all relevant outpoints from a given PSBT and their private keys.
+    /// If the PSBT contains all inputs selected for the transaction and all
+    /// private keys that are going to sign them, calling this method is all that
+    /// is needed to regiter outpoints and private keys.
+    ///
+    /// Returns all private keys that were not found but are needed. They can be
+    /// added manually by [`add_private_key`] or [`add_taproot_private_key`].
+    // TODO: Return list of required keys
+    pub fn add_from_psbt(
+        &mut self,
+        psbt: &Psbt,
+        xprivs: &HashMap<Fingerprint, ExtendedPrivKey>,
+    ) -> &mut SilentPayment<'a> {
+        psbt.inputs
+            .iter()
+            .zip(psbt.unsigned_tx.input.iter())
+            .filter(|(psbt_input, tx_input)| {
+                psbt_input
+                    .witness_utxo
+                    .as_ref()
+                    .and_then(|txout| input_public_key(tx_input, txout))
+                    .is_some()
+            })
+            .for_each(|(psbt_input, tx_input)| {
+                self.add_outpoint(tx_input.previous_output);
+
+                let der = &psbt_input.bip32_derivation;
+                let (_pk, (fp, dp)) = der.first_key_value().unwrap();
+                let xpriv = xprivs.get(fp).unwrap();
+                let sk = xpriv.derive_priv(self.secp, dp).unwrap().to_priv();
+
+                // TODO: Verify public key of tx_input
+                // TODO: Check for taproot
+
+                self.add_private_key(sk.inner);
+            });
+
+        self
+    }
+
+    // TODO: Return list of required keys
+    pub fn add_from_psbt_no_keys(&mut self, psbt: &Psbt) -> &mut SilentPayment<'a> {
+        self.add_from_psbt(psbt, &Default::default())
     }
 
     #[must_use]

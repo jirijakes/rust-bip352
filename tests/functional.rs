@@ -77,7 +77,7 @@ fn test_me() {
     sp.add_outpoint(outpoint2);
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc2) {
-        sp.add_private_key(sec);
+        sp.add_taproot_private_key(sec);
     }
 
     // Collect output scripts for silent payment

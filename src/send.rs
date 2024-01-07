@@ -48,7 +48,7 @@
 use std::collections::HashMap;
 
 use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
-use bitcoin::{OutPoint, ScriptBuf};
+use bitcoin::{OutPoint, ScriptBuf, Transaction};
 
 use crate::address::SilentPaymentAddress;
 use crate::{Aggregate, InputNonce, SharedSecret};

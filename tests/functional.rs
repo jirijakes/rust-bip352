@@ -6,7 +6,9 @@ use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, OutPoint};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
-use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTransactionInput};
+use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{
+    AddressType, CreateRawTransactionInput, FundRawTransactionOptions,
+};
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::BitcoinD;
 use miniscript::Descriptor;
@@ -44,12 +46,15 @@ fn test_me() {
 
     let client = &BitcoinD::new("/usr/bin/bitcoind").unwrap().client;
 
+    // Collect all private keys
     let descs = client.call::<ListDescriptorsResult>("listdescriptors", &[Value::Bool(true)]).unwrap();
     let keys = common::PrivateKeys { keys: common::collect_xprivs(&secp, &descs.descriptors), secp: &secp };
 
+    // Get some money
     let addr = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
     client.generate_to_address(101, &addr).unwrap();
 
+    // Create one output and use it as one input for silent payment
     let addr1 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
     let tx1 = client.send_to_address(&addr1, Amount::from_btc(10.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
@@ -62,6 +67,7 @@ fn test_me() {
         sp.add_private_key(sec);
     }
 
+    // Create second output and use it as second input for silent payment
     let addr2 = client.get_new_address(None, Some(AddressType::Bech32m)).unwrap().require_network(Network::Regtest).unwrap();
     let tx2 = client.send_to_address(&addr2, Amount::from_btc(20.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
@@ -74,6 +80,7 @@ fn test_me() {
         sp.add_private_key(sec);
     }
 
+    // Collect output scripts for silent payment
     let outputs = sp
         .generate_output_scripts()
         .iter()
@@ -83,21 +90,12 @@ fn test_me() {
         ))
         .collect();
 
-    println!("{:#?}", outputs);
-
+    // Finish transaction, sign and broadcast
     let tx = client
         .create_raw_transaction(
             &[
-                CreateRawTransactionInput {
-                    txid: outpoint1.txid,
-                    vout: outpoint1.vout,
-                    sequence: None,
-                },
-                CreateRawTransactionInput {
-                    txid: outpoint2.txid,
-                    vout: outpoint2.vout,
-                    sequence: None,
-                },
+                CreateRawTransactionInput { txid: outpoint1.txid, vout: outpoint1.vout, sequence: None },
+                CreateRawTransactionInput { txid: outpoint2.txid, vout: outpoint2.vout, sequence: None },
             ],
             &outputs,
             None,
@@ -105,7 +103,8 @@ fn test_me() {
         )
         .unwrap();
 
-    let raw = client.sign_raw_transaction_with_wallet(&tx, None, None).unwrap();
-
-    println!("{}", hex::encode(raw.hex));
+    let funded = client.fund_raw_transaction(&tx, Some(&Default::default()), None).unwrap();
+    let signed = client.sign_raw_transaction_with_wallet(&funded.hex, None, None).unwrap();
+    let txid = client.send_raw_transaction(&signed.hex).unwrap();
+    println!("{:#?}", txid);
 }

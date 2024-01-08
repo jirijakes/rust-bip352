@@ -6,9 +6,7 @@ use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, OutPoint};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
-use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{
-    AddressType, CreateRawTransactionInput, FundRawTransactionOptions,
-};
+use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTransactionInput};
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::BitcoinD;
 use miniscript::Descriptor;
@@ -44,7 +42,11 @@ fn test_me() {
     let mut sp = SilentPayment::new(&secp);
     sp.add_recipient(spaddress);
 
-    let client = &BitcoinD::new("/usr/bin/bitcoind").unwrap().client;
+    let client = {
+        let mut conf = bitcoind::Conf::default();
+        conf.args = vec!["-regtest", "-txindex=1", "-fallbackfee=0.0002"];
+        &BitcoinD::with_conf("/usr/bin/bitcoind", &conf).unwrap().client
+    };
 
     // Collect all private keys
     let descs = client.call::<ListDescriptorsResult>("listdescriptors", &[Value::Bool(true)]).unwrap();

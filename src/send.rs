@@ -48,7 +48,7 @@
 use std::collections::HashMap;
 
 use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
-use bitcoin::{OutPoint, ScriptBuf, Transaction};
+use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
 use crate::{Aggregate, InputNonce, SharedSecret};
@@ -129,6 +129,7 @@ impl<'a> SilentPayment<'a> {
         let input_nonce = self.input_nonce.hash().unwrap();
         let input_secret_key = self.input_secret_key.get().unwrap();
 
+        // scan_key -> spend_keys
         let mut groups: HashMap<PublicKey, Vec<(usize, PublicKey)>> = HashMap::new();
 
         // Enumerate to preserve order.
@@ -144,6 +145,8 @@ impl<'a> SilentPayment<'a> {
             .flat_map(|(b_scan, b_ms)| {
                 let shared_secret =
                     SharedSecret::new(input_nonce, b_scan, input_secret_key, self.secp);
+
+                println!("1> {:?}", shared_secret);
 
                 b_ms.into_iter().zip(0..).map(move |((index, b_m), k)| {
                     (index, shared_secret.destination_output(b_m, k, self.secp))

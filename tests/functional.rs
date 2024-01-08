@@ -1,12 +1,14 @@
 use std::str::FromStr;
 
 use bip352::address::SilentPaymentAddress;
+use bip352::input_public_key;
+use bip352::receive::Scanning;
 use bip352::send::SilentPayment;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin::secp256k1::Secp256k1;
+use bitcoin::secp256k1::{Parity, Secp256k1, XOnlyPublicKey};
 use bitcoin::{Address, OutPoint};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
-use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTransactionInput};
+use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::CreateRawTransactionInput;
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::BitcoinD;
 use miniscript::Descriptor;
@@ -70,7 +72,8 @@ fn test_me() {
     }
 
     // Create second output and use it as second input for silent payment
-    let addr2 = client.get_new_address(None, Some(AddressType::Bech32m)).unwrap().require_network(Network::Regtest).unwrap();
+    // TODO: Change to Bech32m and tapproot
+    let addr2 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
     let tx2 = client.send_to_address(&addr2, Amount::from_btc(20.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx2 = client.get_transaction(&tx2, None).unwrap().transaction().unwrap();
@@ -79,7 +82,7 @@ fn test_me() {
     sp.add_outpoint(outpoint2);
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc2) {
-        sp.add_taproot_private_key(sec);
+        sp.add_private_key(sec);
     }
 
     // Collect output scripts for silent payment
@@ -108,5 +111,33 @@ fn test_me() {
     let funded = client.fund_raw_transaction(&tx, Some(&Default::default()), None).unwrap();
     let signed = client.sign_raw_transaction_with_wallet(&funded.hex, None, None).unwrap();
     let txid = client.send_raw_transaction(&signed.hex).unwrap();
-    println!("{:#?}", txid);
+    client.generate_to_address(101, &addr).unwrap();
+
+    //
+    // Receiver
+    //
+
+    let scanning = Scanning::new(scan_key, spend_key.public_key(&secp), vec![]);
+    let mut sc = scanning.scan_builder(&secp);
+    
+    let tx = client.get_raw_transaction(&txid, None).unwrap();
+    tx.input.iter().for_each(|i| { sc.add_outpoint(&i.previous_output); });
+    let prevs = tx.input.iter().map(|vin| client.get_raw_transaction(&vin.previous_output.txid, None).unwrap().output[vin.previous_output.vout as usize].script_pubkey.clone()).collect::<Vec<_>>();
+    prevs.iter().zip(&tx.input)
+        .for_each(|(prevout, input)| if let Some(pk) = input_public_key(prevout, input) {
+            sc.add_public_key(&pk);
+        });
+    tx.output.iter()
+        .for_each(|o| {
+            sc.add_output(
+                o.script_pubkey
+                    .as_bytes()
+                    .get(2..)
+                    .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
+                    .map(|k| k.public_key(Parity::Even))
+                    .unwrap()
+            );
+        });
+    
+    println!("{:#?}", sc.xxx());
 }

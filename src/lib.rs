@@ -7,7 +7,7 @@ use bitcoin::secp256k1::{
     Error as SecpError, KeyPair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
     Verification, XOnlyPublicKey,
 };
-use bitcoin::{OutPoint, ScriptBuf, TxIn, TxOut};
+use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
 
 pub mod address;
 #[cfg(feature = "receive")]
@@ -153,6 +153,7 @@ impl<K> Default for Aggregate<K> {
     }
 }
 
+#[derive(Debug)]
 pub struct TweakData {
     tweak: Scalar,
     label: Scalar,
@@ -171,6 +172,7 @@ impl TweakData {
     }
 }
 
+#[derive(Debug)]
 pub struct SharedSecret([u8; 33]);
 
 impl SharedSecret {
@@ -208,6 +210,8 @@ impl SharedSecret {
         let t_k = Scalar::from_be_bytes(sha256::Hash::from_engine(engine).to_byte_array()).unwrap();
         let p_k = spend_key.add_exp_tweak(secp, &t_k).unwrap();
 
+        println!("> {:?}", p_k);
+
         if p_k.x_only_public_key().1 == Parity::Odd {
             (p_k.negate(secp), t_k)
         } else {
@@ -231,26 +235,25 @@ pub fn silent_payment_signing_key<C: Signing>(
 /// `None` if public key could not be extracted.
 ///
 /// See section _Inputs For Shared Secret Derivation_ in BIP352 for details.
-pub fn input_public_key(input: &TxIn, prevout: &TxOut) -> Option<PublicKey> {
-    if prevout.script_pubkey.is_p2pkh() {
+pub fn input_public_key(prevout: &Script, input: &TxIn) -> Option<PublicKey> {
+    if prevout.is_p2pkh() {
         let ss = input.script_sig.as_bytes();
         ss.get(ss.len() - 33..)
             .and_then(|b| PublicKey::from_slice(b).ok())
-    } else if prevout.script_pubkey.is_v0_p2wpkh() {
+    } else if prevout.is_v0_p2wpkh() {
         input
             .witness
             .nth(1)
             .and_then(|b| PublicKey::from_slice(b).ok())
-    } else if prevout.script_pubkey.is_v1_p2tr() {
+    } else if prevout.is_v1_p2tr() {
         prevout
-            .script_pubkey
             .as_bytes()
             .get(2..)
             .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
             .map(|k| k.public_key(Parity::Even))
     // } else if prevout.script_pubkey.is_p2sh() { TODO: P2SH-P2WPKH
     } else {
-        prevout.script_pubkey.p2pk_public_key().map(|pk| pk.inner)
+        prevout.p2pk_public_key().map(|pk| pk.inner)
     }
 }
 
@@ -268,7 +271,7 @@ mod test {
 
         let prev = deserialize::<Transaction>(&Vec::from_hex("0100000001510d01348d6085971a5aeb1889dccfbc9c04066991e32e6212b6b8c98f01d23e000000006a473044022074ba5477db90089a264a981ccad24b17ed9e5a44256477a291069f66b532c8d6022012dc8ee766eb1470d22305da16b7e85f546a5fe017e6b15f45b7311d8de627b201210361b7dcaff946649a6e36d35fcd9f45edbb60c39be159a4796e99bcd66373774fffffffff0207317800000000001976a914dac493c1822e2bac7bb7d1308c8b5860ee4d3b4288acfc06d9000000000017a914454d3ad7b59d29b7dbdbee91fd7b209bdd39662a8700000000").unwrap()).unwrap();
 
-        assert!(input_public_key(&tx.input[0], &prev.output[0]).is_some());
+        assert!(input_public_key(&prev.output[0].script_pubkey, &tx.input[0],).is_some());
     }
 
     #[test]
@@ -277,7 +280,7 @@ mod test {
 
         let prev = deserialize::<Transaction>(&Vec::from_hex("02000000000104227ebdf59aa75eb65bc3666590b3b52b474678cbafa55e227137aa6f74e1bdde0000000000ffffffff1e5cfbbde34444f49d3e7c2b12bf369cdb062e1d5c14b52050c6db444a073e260000000000ffffffff57bc82c33cefd4b97bc10ba505bc37d9d7811b95743735ec6133dcadea13095e0000000000ffffffff556c8f583ab9cd9f0a5f475c768b75e265d5bb47d60f5ed39cc9e92d1670dde40000000000ffffffff02c753d500000000001600140d281cbad529b089c548f1c062587f32df8b2b7d949a7400000000001600147da639cdbbbc2cfc8d6a06bb3dae2a9a380ee6dc024730440220289e5a66676337e1d04cebd246f4495fdeb7f5a49a04e1b2987dcb14a8b4d8d702204414c22159c1d85521539b601a36c27ff6fe4f8f04ba5cce25f8242983569feb012102eea57d7f5af2c9ca13dcb3cfa7916fd6b005f9e10b78d3691d435b41402cb7ab02473044022018edcc3e25176f60e6b2c7d31f3534196772a0a5697adcc99165257952140fa902206d239be6d38c30dc7d9a6f434ea69d25d2256d69d8205aba422836384a7579f3012102a4a8b0750cbb33b007eb4d4f1db43c772964e71e354b650ce24e6b9ae8ac0a0d02473044022063e8ea69549f3fd85893963de3b64c6d8ada62a9add0306d6530c6749c32c0c002206698636cb4dcc5b6f898f97912b3ee83df4f239ffd5204138205a50244f62d630121031f40841d74b92963eb641a17be3ad9a9e244b88556e08d09fdb50531bd9ea8ca02473044022025090f5b98ae9b421db3aca367fee452f9c18e070446c2d4b88ff6b072408ea20220369d91093ff6be68cf1ae1304b0916cf830f9400358c2d1131b80dc88a26a8c7012102fb513f05ac31baeeec03eeb36b75e2724cb471c2585b25b76d5f26ffbfebdeca00000000").unwrap()).unwrap();
 
-        assert!(input_public_key(&tx.input[0], &prev.output[0]).is_some());
+        assert!(input_public_key(&prev.output[0].script_pubkey, &tx.input[0],).is_some());
     }
 
     #[test]
@@ -286,6 +289,6 @@ mod test {
 
         let prev = deserialize::<Transaction>(&Vec::from_hex("02000000000103d1f0417afbbbda5c5c6564bb456afb9fea3562d5b58547670ecb37f1dcfb91070100000000fdffffff4195e92c1d973266632b34e1ea025b1a88f57e13724b7100fefab1139f0a73bb0100000000fdffffffe157c6fe95807a2984c5f5975d7a5cb7bcca2057dd3fdbcabb6b3ea7ea51121d0100000000fdffffff0b0c9d4c0000000000160014c636fe9763effbdb212c74d9f8cf1e4e5c49f5bf1cf10b000000000016001459a449d01b453a02dd8f4e571593a4647640da3277700500000000001600143273c760e037bfbb56c0e65084c840febb1dafe560ea000000000000160014ed56e3e6bd0150f442803e2aadcfcefab51b36fb60ea000000000000160014285cf327a6623d590d0766175eac6cf4eebaf418c2970a0000000000160014cfd32ca45248f758ef6476c134a47aa00323328ef3b203000000000016001420f3c4a2f1502ae4237e15676984c0f933bd38aae0570e0000000000225120c11979449d56f6066c0ffd622ca89213fbacc2f742653063cb120a24d7f2c108fc81450000000000160014ab2159e5c0d88335623d18a02e2c94d4e3d332fa724b070000000000160014200d178390e34bd6b7bb283542387a2779493cd4a54abb5d00000000160014f60834ef165253c571b11ce9fa74e46692fc5ec10247304402205dde094af4fbbfca450686f75781f826cdfcdc46ebf2a993a1a7f871f49bd00e02205d8bb8d7549de0bc9e40f8db08a4013ab711a365c41c01490149369c0b18e60e0121026e5628506ecd33242e5ceb5fdafe4d3066b5c0f159b3c05a621ef65f177ea28602483045022100986016daece841e3f9c7a34f53bc12771dcc8a3c439b574c72bdc6568493570602205842ff775464a4966b11c65738662fa579098ad3aa8421fffa01243780386dbc0121026e5628506ecd33242e5ceb5fdafe4d3066b5c0f159b3c05a621ef65f177ea28602473044022017c3e474666b02b38fb7bffd7cb856e2c3332834fd9d1906757164175e85b6ce022005f04e95c380e005ad8c1d101ccb28d7714aa0bdc23e40dc7f93a6a10e18570b0121026e5628506ecd33242e5ceb5fdafe4d3066b5c0f159b3c05a621ef65f177ea28600000000").unwrap()).unwrap();
 
-        assert!(input_public_key(&tx.input[0], &prev.output[7]).is_some());
+        assert!(input_public_key(&prev.output[7].script_pubkey, &tx.input[0],).is_some());
     }
 }

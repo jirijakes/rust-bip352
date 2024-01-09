@@ -147,6 +147,8 @@ impl<'a> ScanBuilder<'a> {
             self.secp,
         );
 
+        println!("2> {:?}", shared_secret);
+
         let labels = self
             .scanning
             .labels

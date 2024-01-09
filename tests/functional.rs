@@ -4,9 +4,10 @@ use bip352::address::SilentPaymentAddress;
 use bip352::input_public_key;
 use bip352::receive::Scanning;
 use bip352::send::SilentPayment;
+use bip352::spend::Spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::secp256k1::{Parity, Secp256k1, XOnlyPublicKey};
-use bitcoin::{Address, OutPoint};
+use bitcoin::{Address, OutPoint, PrivateKey};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
 use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::CreateRawTransactionInput;
 use bitcoind::bitcoincore_rpc::RpcApi;
@@ -117,9 +118,11 @@ fn test_me() {
     // Receiver
     //
 
+    // Scan
+
     let scanning = Scanning::new(scan_key, spend_key.public_key(&secp), vec![]);
     let mut sc = scanning.scan_builder(&secp);
-    
+
     let tx = client.get_raw_transaction(&txid, None).unwrap();
     tx.input.iter().for_each(|i| { sc.add_outpoint(&i.previous_output); });
     let prevs = tx.input.iter().map(|vin| client.get_raw_transaction(&vin.previous_output.txid, None).unwrap().output[vin.previous_output.vout as usize].script_pubkey.clone()).collect::<Vec<_>>();
@@ -138,6 +141,42 @@ fn test_me() {
                     .unwrap()
             );
         });
-    
-    println!("{:#?}", sc.xxx());
+
+    let outputs = sc.xxx();
+    let output = outputs.iter().next().unwrap();
+
+    // Spend
+
+    let mut spend = Spend::new();
+    tx.input.iter().for_each(|i| { spend.add_outpoint(&i.previous_output); });
+    prevs.iter().zip(&tx.input)
+        .for_each(|(prevout, input)| if let Some(pk) = input_public_key(prevout, input) {
+            spend.add_public_key(&pk);
+        });
+
+    let vout = tx.output.iter().position(|o| o.value == 10000000).unwrap() as u32;
+    let addr3 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
+    let spending_tx = client
+        .create_raw_transaction(
+            &[CreateRawTransactionInput { txid: tx.txid(), vout, sequence: None }],
+            &[(addr3.to_string(), Amount::from_btc(0.07).unwrap())].into_iter().collect(),
+            None,
+            None
+        ).unwrap();
+    let funded = client.fund_raw_transaction(&spending_tx, None, None).unwrap();
+
+    let keypair = spend.signing_keypair(scan_key, spend_key, output.k(), output.label());
+    let signed = client
+        .sign_raw_transaction_with_key(
+            &funded.hex,
+            &[PrivateKey::new(keypair.secret_key(), Network::Regtest)],
+            None,
+            None
+        ).unwrap();
+
+    let txid = client.send_raw_transaction(&signed.hex).unwrap();
+    client.generate_to_address(10, &addr).unwrap();
+    let tx = client.get_raw_transaction_info(&txid, None).unwrap();
+
+    println!("{:?}", tx);
 }

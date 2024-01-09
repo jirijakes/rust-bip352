@@ -129,7 +129,7 @@ fn test_me() {
         .for_each(|(prevout, input)| if let Some(pk) = input_public_key(prevout, input) {
             scan.add_public_key(&pk);
         });
-    tx.output.iter().for_each(|o| { scan.add_tx_out(o); });
+    tx.output.iter().for_each(|o| { scan.add_output(o); });
 
     let outputs = scan.xxx();
     let output = outputs.iter().next().unwrap();

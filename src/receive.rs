@@ -66,16 +66,16 @@ impl Scan {
     /// Adds a transaction output, if eligibile, to be examined whether
     /// it is an output of a Silent Payment. Only taproot outputs are
     /// considered, other output types are ignored.
-    pub fn add_tx_out(&mut self, tx_out: &TxOut) -> &mut Self {
-        self.add_script_pubkey(&tx_out.script_pubkey)
+    pub fn add_output(&mut self, tx_out: &TxOut) -> &mut Self {
+        self.add_output_script_pubkey(&tx_out.script_pubkey)
     }
 
     /// Adds script of a transaction output, if eligibile, to be examined
     /// whether it is an output of a Silent Payment. Only taproot outputs are
     /// considered, other output types are ignored.
-    pub fn add_script_pubkey(&mut self, spk: &Script) -> &mut Self {
+    pub fn add_output_script_pubkey(&mut self, spk: &Script) -> &mut Self {
         if spk.is_v1_p2tr() {
-            self.add_output(
+            self.add_output_public_key(
                 spk.as_bytes()
                     .get(2..)
                     .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
@@ -89,7 +89,7 @@ impl Scan {
     /// Unconditionally adds a public key of a transaction output to be be examined
     /// whether it is an output of a Silent Payment. Only taproot outputs are eligible.
     /// If unsure, use [`add_script_pubkey`] or [`add_tx_out`].
-    pub fn add_output(&mut self, output: XOnlyPublicKey) -> &mut Self {
+    pub fn add_output_public_key(&mut self, output: XOnlyPublicKey) -> &mut Self {
         // TODO: Does it have to push PublicKey or would XOnlyPublicKey be enough?
         self.outputs.push(output.public_key(Parity::Even));
         self

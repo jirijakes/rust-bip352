@@ -55,7 +55,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .for_each(|(expected, spa)| assert_eq!(&spa.to_string(), expected, "{test}"));
 
         r.given.outputs.iter().for_each(|o| {
-            scan.add_output(XOnlyPublicKey::from_str(o).unwrap());
+            scan.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
         });
 
         r.given.outpoints.iter().for_each(|(txid, vout)| {

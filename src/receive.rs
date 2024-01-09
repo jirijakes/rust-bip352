@@ -1,86 +1,35 @@
 use std::collections::{HashMap, HashSet};
 
 use bitcoin::secp256k1::{
-    All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
+    Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
-use bitcoin::{OutPoint, ScriptBuf, TxOut};
+use bitcoin::OutPoint;
 
 use crate::address::SilentPaymentAddress;
 use crate::{Aggregate, InputNonce, SharedSecret, SilentPaymentOutput};
 
-#[derive(Clone)]
-pub struct Scanning {
+pub struct Scan {
     scan_key: SecretKey,
     spend_key: PublicKey,
     labels: Vec<Scalar>,
+    outputs: Vec<PublicKey>,
+    input_public_key: Aggregate<PublicKey>,
+    input_nonce: InputNonce,
 }
 
-impl Scanning {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<[u8; 32]>) -> Scanning {
-        Scanning {
+impl Scan {
+    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<[u8; 32]>) -> Self {
+        Self {
             scan_key,
             spend_key,
             labels: labels
                 .into_iter()
                 .map(|x| Scalar::from_be_bytes(x).unwrap())
                 .collect(),
+            outputs: Default::default(),
+            input_nonce: Default::default(),
+            input_public_key: Default::default(),
         }
-    }
-
-    pub fn scan_public_keys<'a>(
-        &self,
-        public_keys: &[XOnlyPublicKey],
-        secp: &'a Secp256k1<All>,
-    ) -> Option<ScanBuilder<'a>> {
-        if public_keys.is_empty() {
-            None
-        } else {
-            let mut builder = self.scan_builder(secp);
-            public_keys.iter().for_each(|pk| {
-                builder.add_output(pk.public_key(Parity::Even));
-            });
-            Some(builder)
-        }
-    }
-
-    pub fn scan_script_pubkeys<'a>(
-        &self,
-        script_pubkeys: &[ScriptBuf],
-        secp: &'a Secp256k1<All>,
-    ) -> Option<ScanBuilder<'a>> {
-        let public_keys = script_pubkeys
-            .iter()
-            .filter_map(|spk| {
-                if spk.is_v1_p2tr() {
-                    spk.as_bytes()
-                        .get(2..)
-                        .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        self.scan_public_keys(&public_keys, secp)
-    }
-
-    // TODO: put secp into Scanning?
-    pub fn scan_outputs<'a>(
-        &self,
-        outputs: &[TxOut],
-        secp: &'a Secp256k1<All>,
-    ) -> Option<ScanBuilder<'a>> {
-        self.scan_script_pubkeys(
-            &outputs
-                .iter()
-                .map(|o| o.script_pubkey.clone())
-                .collect::<Vec<_>>(),
-            secp,
-        )
-    }
-
-    pub fn scan_builder<'a>(&self, secp: &'a Secp256k1<All>) -> ScanBuilder<'a> {
-        ScanBuilder::new(self.clone(), secp)
     }
 
     pub fn addresses<C>(&self, secp: &Secp256k1<C>) -> Vec<SilentPaymentAddress>
@@ -98,66 +47,47 @@ impl Scanning {
 
         addrs
     }
-}
 
-pub struct ScanBuilder<'a> {
-    scanning: Scanning,
-    input_public_key: Aggregate<PublicKey>,
-    input_nonce: InputNonce,
-    outputs: Vec<PublicKey>,
-    secp: &'a Secp256k1<All>,
-}
-
-impl<'a> ScanBuilder<'a> {
-    pub fn new(scanning: Scanning, secp: &Secp256k1<All>) -> ScanBuilder {
-        ScanBuilder {
-            scanning,
-            secp,
-            input_public_key: Default::default(),
-            input_nonce: Default::default(),
-            outputs: Default::default(),
-        }
-    }
-
-    pub fn add_xonly_public_key(&mut self, key: &XOnlyPublicKey) -> &mut ScanBuilder<'a> {
+    pub fn add_xonly_public_key(&mut self, key: &XOnlyPublicKey) -> &mut Self {
         self.add_public_key(&key.public_key(Parity::Even))
     }
 
-    pub fn add_public_key(&mut self, public_key: &PublicKey) -> &mut ScanBuilder<'a> {
+    pub fn add_public_key(&mut self, public_key: &PublicKey) -> &mut Self {
         self.input_public_key.add_key(public_key);
         self.input_nonce.add_input_public_key(public_key).unwrap();
         self
     }
 
-    pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut ScanBuilder<'a> {
+    pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut Self {
         self.input_nonce.add_outpoint(outpoint);
         self
     }
 
-    pub fn add_output(&mut self, output: PublicKey) -> &mut ScanBuilder<'a> {
+    pub fn add_output(&mut self, output: PublicKey) -> &mut Self {
         self.outputs.push(output);
         self
     }
 
     pub fn xxx(self) -> HashSet<SilentPaymentOutput> {
+        let secp = &Secp256k1::new();
+
         let shared_secret = SharedSecret::new(
             self.input_nonce.hash().unwrap(),
             self.input_public_key.get().unwrap(),
-            self.scanning.scan_key,
-            self.secp,
+            self.scan_key,
+            secp,
         );
 
         let labels = self
-            .scanning
             .labels
             .iter()
             .flat_map(|&label| {
                 let label_public_key = SecretKey::from_slice(&label.to_be_bytes())
                     .unwrap()
-                    .public_key(self.secp);
+                    .public_key(secp);
                 [
                     (label_public_key, label),
-                    (label_public_key.negate(self.secp), label),
+                    (label_public_key.negate(secp), label),
                 ]
             })
             .collect::<HashMap<_, _>>();
@@ -165,15 +95,14 @@ impl<'a> ScanBuilder<'a> {
         self.outputs
             .iter()
             .fold((HashSet::new(), 0u32), |(mut acc, k), &output| {
-                let (pk, _) =
-                    shared_secret.destination_public_key(self.scanning.spend_key, k, self.secp);
+                let (pk, _) = shared_secret.destination_public_key(self.spend_key, k, secp);
 
                 let next_output = if output == pk {
                     Some(SilentPaymentOutput::new(output.x_only_public_key().0, k))
                 } else {
-                    [output, output.negate(self.secp)]
+                    [output, output.negate(secp)]
                         .iter()
-                        .filter_map(|x| x.combine(&pk.negate(self.secp)).ok())
+                        .filter_map(|x| x.combine(&pk.negate(secp)).ok())
                         .find_map(|x| labels.get_key_value(&x))
                         .and_then(|(x, label)| {
                             x.combine(&pk).ok().map(|x| {

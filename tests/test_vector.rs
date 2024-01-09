@@ -32,13 +32,14 @@ fn bip352_test_vector() {
 fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
-    use bip352::receive::Scanning;
+    use bip352::receive::Scan;
+    use bitcoin::secp256k1::Parity;
 
     receiving.iter().for_each(|r| {
         let spend_key =
             SecretKey::from_slice(&Vec::from_hex(&r.given.spend_priv_key).unwrap()).unwrap();
 
-        let scanning = Scanning::new(
+        let mut scan = Scan::new(
             SecretKey::from_slice(&Vec::from_hex(&r.given.scan_priv_key).unwrap()).unwrap(),
             spend_key.public_key(secp),
             r.given
@@ -51,56 +52,49 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
         r.expected
             .addresses
             .iter()
-            .zip(scanning.addresses(secp))
+            .zip(scan.addresses(secp))
             .for_each(|(expected, spa)| assert_eq!(&spa.to_string(), expected, "{test}"));
 
-        let given_outputs = r
-            .given
+        r.given.outputs.iter().for_each(|o| {
+            scan.add_output(
+                XOnlyPublicKey::from_str(o)
+                    .unwrap()
+                    .public_key(Parity::Even),
+            );
+        });
+
+        r.given.outpoints.iter().for_each(|(txid, vout)| {
+            scan.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
+        });
+        r.given.input_pub_keys.iter().for_each(|pk| {
+            if pk.len() == 66 {
+                scan.add_public_key(&pk.parse().unwrap());
+            } else {
+                scan.add_xonly_public_key(&pk.parse().unwrap());
+            }
+        });
+
+        let silent_payment_outputs = scan.xxx();
+
+        let calculated_outputs = silent_payment_outputs
+            .iter()
+            .map(|o| o.public_key())
+            .collect::<HashSet<_>>();
+
+        let expected_outputs = r
+            .expected
             .outputs
             .iter()
-            .map(|o| {
-                ScriptBuf::new_v1_p2tr_tweaked(
-                    XOnlyPublicKey::from_str(o)
-                        .unwrap()
-                        .dangerous_assume_tweaked(),
-                )
-            })
-            .collect::<Vec<_>>();
+            .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
+            .collect();
 
-        if let Some(mut builder) = scanning.scan_script_pubkeys(&given_outputs, secp) {
-            r.given.outpoints.iter().for_each(|(txid, vout)| {
-                builder.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
-            });
-            r.given.input_pub_keys.iter().for_each(|pk| {
-                if pk.len() == 66 {
-                    builder.add_public_key(&pk.parse().unwrap());
-                } else {
-                    builder.add_xonly_public_key(&pk.parse().unwrap());
-                }
-            });
+        assert_eq!(
+            calculated_outputs, expected_outputs,
+            "Found different outputs than expected in `{test}`."
+        );
 
-            let silent_payment_outputs = builder.xxx();
-
-            let calculated_outputs = silent_payment_outputs
-                .iter()
-                .map(|o| o.public_key())
-                .collect::<HashSet<_>>();
-
-            let expected_outputs = r
-                .expected
-                .outputs
-                .iter()
-                .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
-                .collect();
-
-            assert_eq!(
-                calculated_outputs, expected_outputs,
-                "Found different outputs than expected in `{test}`."
-            );
-
-            #[cfg(feature = "spend")]
-            test_spending(r, &silent_payment_outputs, test, secp);
-        }
+        #[cfg(feature = "spend")]
+        test_spending(r, &silent_payment_outputs, test, secp);
     });
 }
 

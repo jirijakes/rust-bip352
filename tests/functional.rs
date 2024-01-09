@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use bip352::address::SilentPaymentAddress;
 use bip352::input_public_key;
-use bip352::receive::Scanning;
+use bip352::receive::Scan;
 use bip352::send::SilentPayment;
 use bip352::spend::Spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
@@ -120,8 +120,7 @@ fn test_me() {
 
     // Scan
 
-    let scanning = Scanning::new(scan_key, spend_key.public_key(&secp), vec![]);
-    let mut sc = scanning.scan_builder(&secp);
+    let mut sc = Scan::new(scan_key, spend_key.public_key(&secp), vec![]);
 
     let tx = client.get_raw_transaction(&txid, None).unwrap();
     tx.input.iter().for_each(|i| { sc.add_outpoint(&i.previous_output); });

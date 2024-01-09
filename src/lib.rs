@@ -14,6 +14,47 @@ pub mod address;
 pub mod receive;
 #[cfg(feature = "send")]
 pub mod send;
+#[cfg(feature = "spend")]
+pub mod spend;
+
+/// An output that has been detected as a Silent Payment together with
+/// all data that are needed to spend it. Wallets should index this.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub struct SilentPaymentOutput {
+    public_key: XOnlyPublicKey,
+    k: u32,
+    label: Option<[u8; 32]>,
+}
+
+impl SilentPaymentOutput {
+    pub fn new(public_key: XOnlyPublicKey, k: u32) -> Self {
+        Self {
+            public_key,
+            k,
+            label: None,
+        }
+    }
+
+    pub fn new_with_label(public_key: XOnlyPublicKey, k: u32, label: [u8; 32]) -> Self {
+        Self {
+            public_key,
+            k,
+            label: Some(label),
+        }
+    }
+
+    pub fn public_key(&self) -> XOnlyPublicKey {
+        self.public_key
+    }
+
+    pub fn k(&self) -> u32 {
+        self.k
+    }
+
+    pub fn label(&self) -> Option<[u8; 32]> {
+        self.label
+    }
+}
 
 #[derive(Default)]
 pub struct InputNonce {
@@ -177,12 +218,12 @@ pub struct SharedSecret([u8; 33]);
 
 impl SharedSecret {
     pub fn new<C: Verification>(
-        outpoints_hash: Scalar,
+        input_nonce: Scalar,
         pk: PublicKey,
         sk: SecretKey,
         secp: &Secp256k1<C>,
     ) -> SharedSecret {
-        let ecdh = sk.mul_tweak(&outpoints_hash).unwrap();
+        let ecdh = sk.mul_tweak(&input_nonce).unwrap();
         SharedSecret(pk.mul_tweak(secp, &ecdh.into()).unwrap().serialize())
     }
 
@@ -209,8 +250,6 @@ impl SharedSecret {
 
         let t_k = Scalar::from_be_bytes(sha256::Hash::from_engine(engine).to_byte_array()).unwrap();
         let p_k = spend_key.add_exp_tweak(secp, &t_k).unwrap();
-
-        println!("> {:?}", p_k);
 
         if p_k.x_only_public_key().1 == Parity::Odd {
             (p_k.negate(secp), t_k)

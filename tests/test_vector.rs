@@ -1,4 +1,3 @@
-use bip352::silent_payment_signing_key;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::key::TapTweak;
@@ -11,7 +10,7 @@ use std::io::BufReader;
 use std::str::FromStr;
 
 #[test]
-#[cfg(any(feature = "receive", feature = "send"))]
+#[cfg(any(feature = "receive", feature = "send", feature = "spend"))]
 fn bip352_test_vector() {
     let f = File::open("tests/data/send_and_receive_test_vectors.json").unwrap();
     let reader = BufReader::new(f);
@@ -22,15 +21,17 @@ fn bip352_test_vector() {
         .unwrap()
         .iter()
         .for_each(|t| {
-            #[cfg(feature = "receive")]
-            test_receiving(&t.receiving, &t.comment, &secp);
             #[cfg(feature = "send")]
             test_sending(&t.sending, &t.comment, &secp);
+            #[cfg(feature = "receive")]
+            test_receiving(&t.receiving, &t.comment, &secp);
         });
 }
 
 #[cfg(feature = "receive")]
 fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
+    use std::collections::HashSet;
+
     use bip352::receive::Scanning;
 
     receiving.iter().for_each(|r| {
@@ -78,42 +79,27 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
                 }
             });
 
-            let mut found_outputs = builder.xxx();
+            let silent_payment_outputs = builder.xxx();
 
-            r.expected.outputs.iter().for_each(|o| {
-                let expected_output = XOnlyPublicKey::from_str(&o.pub_key).unwrap();
+            let calculated_outputs = silent_payment_outputs
+                .iter()
+                .map(|o| o.public_key())
+                .collect::<HashSet<_>>();
 
-                let destination = found_outputs.remove(&expected_output);
+            let expected_outputs = r
+                .expected
+                .outputs
+                .iter()
+                .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
+                .collect();
 
-                assert!(
-                    destination.is_some(),
-                    "Could not find `{expected_output}` in `{test}`."
-                );
-
-                if let Some(tweak) = destination {
-                    // assert_eq!(
-                    // hex::encode(tweak.secret_bytes()),
-                    // o.priv_key_tweak,
-                    // "Private key tweak no equal in `{test}`"
-                    // );
-
-                    let keypair = silent_payment_signing_key(spend_key, &tweak, secp).unwrap();
-                    let msg = Message::from_slice(
-                        sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),
-                    )
-                    .unwrap();
-                    let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
-                        .to_byte_array();
-
-                    let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
-                    assert_eq!(hex::encode(sig.as_ref()), o.signature);
-                }
-            });
-
-            assert!(
-                found_outputs.is_empty(),
-                "Found more outputs than expected in `{test}`."
+            assert_eq!(
+                calculated_outputs, expected_outputs,
+                "Found different outputs than expected in `{test}`."
             );
+
+            #[cfg(feature = "spend")]
+            test_spending(r, &silent_payment_outputs, test, secp);
         }
     });
 }
@@ -155,6 +141,62 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
                 assert_eq!(given_script, expected_script, "output script in '{test}'");
             });
     })
+}
+
+#[cfg(feature = "spend")]
+fn test_spending(
+    receiving: &Receiving,
+    silent_payment_outputs: &std::collections::HashSet<bip352::SilentPaymentOutput>,
+    test: &str,
+    secp: &Secp256k1<All>,
+) {
+    use bip352::spend::Spend;
+
+    let scan_key =
+        SecretKey::from_slice(&Vec::from_hex(&receiving.given.scan_priv_key).unwrap()).unwrap();
+
+    let spend_key =
+        SecretKey::from_slice(&Vec::from_hex(&receiving.given.spend_priv_key).unwrap()).unwrap();
+
+    receiving.expected.outputs.iter().for_each(|o| {
+        let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
+
+        if let Some(spo) = silent_payment_outputs
+            .iter()
+            .find(|o| o.public_key() == public_key)
+        {
+            let mut spend = Spend::new();
+
+            receiving.given.outpoints.iter().for_each(|(txid, vout)| {
+                spend.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
+            });
+            receiving.given.input_pub_keys.iter().for_each(|pk| {
+                if pk.len() == 66 {
+                    spend.add_public_key(&pk.parse().unwrap());
+                } else {
+                    spend.add_xonly_public_key(&pk.parse().unwrap());
+                }
+            });
+
+            let keypair = spend.signing_keypair(scan_key, spend_key, spo.k(), spo.label());
+
+            let msg = Message::from_slice(
+                sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),
+            )
+            .unwrap();
+            let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
+                .to_byte_array();
+
+            let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
+            assert_eq!(
+                hex::encode(sig.as_ref()),
+                o.signature,
+                "Signatures are not the same in '{test}'."
+            );
+        } else {
+            panic!("Output {public_key} not found in `{test}`.")
+        }
+    });
 }
 
 #[derive(Debug, Deserialize)]

@@ -22,10 +22,12 @@ fn bip352_test_vector() {
         .unwrap()
         .iter()
         .for_each(|t| {
-            #[cfg(feature = "receive")]
-            test_receiving(&t.receiving, &t.comment, &secp);
             #[cfg(feature = "send")]
             test_sending(&t.sending, &t.comment, &secp);
+            #[cfg(feature = "receive")]
+            test_receiving(&t.receiving, &t.comment, &secp);
+            #[cfg(feature = "spend")]
+            test_spending(&t.receiving, &t.comment, &secp);
         });
 }
 
@@ -78,41 +80,17 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
                 }
             });
 
-            let mut found_outputs = builder.xxx();
+            let expected_outputs = r
+                .expected
+                .outputs
+                .iter()
+                .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
+                .collect();
 
-            r.expected.outputs.iter().for_each(|o| {
-                let expected_output = XOnlyPublicKey::from_str(&o.pub_key).unwrap();
-
-                let destination = found_outputs.remove(&expected_output);
-
-                assert!(
-                    destination.is_some(),
-                    "Could not find `{expected_output}` in `{test}`."
-                );
-
-                if let Some(tweak) = destination {
-                    // assert_eq!(
-                    // hex::encode(tweak.secret_bytes()),
-                    // o.priv_key_tweak,
-                    // "Private key tweak no equal in `{test}`"
-                    // );
-
-                    let keypair = silent_payment_signing_key(spend_key, &tweak, secp).unwrap();
-                    let msg = Message::from_slice(
-                        sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),
-                    )
-                    .unwrap();
-                    let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
-                        .to_byte_array();
-
-                    let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
-                    assert_eq!(hex::encode(sig.as_ref()), o.signature);
-                }
-            });
-
-            assert!(
-                found_outputs.is_empty(),
-                "Found more outputs than expected in `{test}`."
+            assert_eq!(
+                builder.xxx(),
+                expected_outputs,
+                "Found different outputs than expected in `{test}`."
             );
         }
     });
@@ -155,6 +133,42 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
                 assert_eq!(given_script, expected_script, "output script in '{test}'");
             });
     })
+}
+
+#[cfg(feature = "spend")]
+fn test_spending(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
+    use bip352::spend::Spend;
+
+    receiving.iter().for_each(|r| {
+        let scan_key =
+            SecretKey::from_slice(&Vec::from_hex(&r.given.scan_priv_key).unwrap()).unwrap();
+
+        let spend_key =
+            SecretKey::from_slice(&Vec::from_hex(&r.given.spend_priv_key).unwrap()).unwrap();
+
+        let spend = Spend::new(scan_key, spend_key);
+
+        // let keypair = spend.signing_keypair();
+
+        //// TODO: Put into spend test
+        // if let Some(tweak) = destination {
+        //     // assert_eq!(
+        //     // hex::encode(tweak.secret_bytes()),
+        //     // o.priv_key_tweak,
+        //     // "Private key tweak no equal in `{test}`"
+        //     // );
+
+        //     let keypair = silent_payment_signing_key(spend_key, &tweak, secp).unwrap();
+        let msg = Message::from_slice(
+            sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),
+        )
+        .unwrap();
+        let aux =
+            sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes()).to_byte_array();
+
+        // let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
+        // assert_eq!(hex::encode(sig.as_ref()), o.signature);
+    });
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
@@ -6,7 +6,7 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, ScriptBuf, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputNonce, SharedSecret, TweakData};
+use crate::{Aggregate, InputNonce, SharedSecret};
 
 #[derive(Clone)]
 pub struct Scanning {
@@ -139,15 +139,13 @@ impl<'a> ScanBuilder<'a> {
         self
     }
 
-    pub fn xxx(self) -> HashMap<XOnlyPublicKey, TweakData> {
+    pub fn xxx(self) -> HashSet<XOnlyPublicKey> {
         let shared_secret = SharedSecret::new(
             self.input_nonce.hash().unwrap(),
             self.input_public_key.get().unwrap(),
             self.scanning.scan_key,
             self.secp,
         );
-
-        println!("2> {:?}", shared_secret);
 
         let labels = self
             .scanning
@@ -166,26 +164,24 @@ impl<'a> ScanBuilder<'a> {
 
         self.outputs
             .iter()
-            .fold((HashMap::new(), 0u32), |(mut acc, k), &output| {
-                let (pk, tk) =
+            .fold((HashSet::new(), 0u32), |(mut acc, k), &output| {
+                let (pk, _) =
                     shared_secret.destination_public_key(self.scanning.spend_key, k, self.secp);
 
                 let next_output = if output == pk {
-                    Some((output.x_only_public_key().0, TweakData::new(tk)))
+                    Some(output.x_only_public_key().0)
                 } else {
                     [output, output.negate(self.secp)]
                         .iter()
                         .filter_map(|x| x.combine(&pk.negate(self.secp)).ok())
                         .find_map(|x| labels.get_key_value(&x))
-                        .and_then(|(x, &l)| {
-                            x.combine(&pk).ok().map(|x| {
-                                (x.x_only_public_key().0, TweakData::new_with_label(tk, l))
-                            })
+                        .and_then(|(x, _label)| {
+                            x.combine(&pk).ok().map(|x| x.x_only_public_key().0)
                         })
                 };
 
-                if let Some((out, tk)) = next_output {
-                    acc.insert(out, tk);
+                if let Some(out) = next_output {
+                    acc.insert(out);
                     (acc, k + 1)
                 } else {
                     (acc, k)

@@ -9,9 +9,10 @@ keywords = ["bitcoin"]
 exclude = ["justfile"]
 
 [features]
-default = ["send", "receive"]
+default = ["send", "receive", "spend"]
 send = []
 receive = []
+spend = []
 
 [dependencies]
 bitcoin = "0.30"

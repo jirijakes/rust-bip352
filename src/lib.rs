@@ -14,6 +14,7 @@ pub mod address;
 pub mod receive;
 #[cfg(feature = "send")]
 pub mod send;
+pub mod spend;
 
 #[derive(Default)]
 pub struct InputNonce {
@@ -209,8 +210,6 @@ impl SharedSecret {
 
         let t_k = Scalar::from_be_bytes(sha256::Hash::from_engine(engine).to_byte_array()).unwrap();
         let p_k = spend_key.add_exp_tweak(secp, &t_k).unwrap();
-
-        println!("> {:?}", p_k);
 
         if p_k.x_only_public_key().1 == Parity::Odd {
             (p_k.negate(secp), t_k)

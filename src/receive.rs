@@ -6,7 +6,7 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, ScriptBuf, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputNonce, SharedSecret};
+use crate::{Aggregate, InputNonce, SharedSecret, SilentPaymentOutput};
 
 #[derive(Clone)]
 pub struct Scanning {
@@ -139,7 +139,7 @@ impl<'a> ScanBuilder<'a> {
         self
     }
 
-    pub fn xxx(self) -> HashSet<XOnlyPublicKey> {
+    pub fn xxx(self) -> HashSet<SilentPaymentOutput> {
         let shared_secret = SharedSecret::new(
             self.input_nonce.hash().unwrap(),
             self.input_public_key.get().unwrap(),
@@ -169,14 +169,20 @@ impl<'a> ScanBuilder<'a> {
                     shared_secret.destination_public_key(self.scanning.spend_key, k, self.secp);
 
                 let next_output = if output == pk {
-                    Some(output.x_only_public_key().0)
+                    Some(SilentPaymentOutput::new(output.x_only_public_key().0, k))
                 } else {
                     [output, output.negate(self.secp)]
                         .iter()
                         .filter_map(|x| x.combine(&pk.negate(self.secp)).ok())
                         .find_map(|x| labels.get_key_value(&x))
-                        .and_then(|(x, _label)| {
-                            x.combine(&pk).ok().map(|x| x.x_only_public_key().0)
+                        .and_then(|(x, label)| {
+                            x.combine(&pk).ok().map(|x| {
+                                SilentPaymentOutput::new_with_label(
+                                    x.x_only_public_key().0,
+                                    k,
+                                    label.to_be_bytes(),
+                                )
+                            })
                         })
                 };
 

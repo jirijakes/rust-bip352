@@ -6,7 +6,7 @@ use bip352::receive::Scan;
 use bip352::send::SilentPayment;
 use bip352::spend::Spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin::secp256k1::{Parity, Secp256k1, XOnlyPublicKey};
+use bitcoin::secp256k1::{Secp256k1, XOnlyPublicKey};
 use bitcoin::{Address, OutPoint, PrivateKey};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
 use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::CreateRawTransactionInput;
@@ -120,28 +120,18 @@ fn test_me() {
 
     // Scan
 
-    let mut sc = Scan::new(scan_key, spend_key.public_key(&secp), vec![]);
+    let mut scan = Scan::new(scan_key, spend_key.public_key(&secp), vec![]);
 
     let tx = client.get_raw_transaction(&txid, None).unwrap();
-    tx.input.iter().for_each(|i| { sc.add_outpoint(&i.previous_output); });
+    tx.input.iter().for_each(|i| { scan.add_outpoint(&i.previous_output); });
     let prevs = tx.input.iter().map(|vin| client.get_raw_transaction(&vin.previous_output.txid, None).unwrap().output[vin.previous_output.vout as usize].script_pubkey.clone()).collect::<Vec<_>>();
     prevs.iter().zip(&tx.input)
         .for_each(|(prevout, input)| if let Some(pk) = input_public_key(prevout, input) {
-            sc.add_public_key(&pk);
+            scan.add_public_key(&pk);
         });
-    tx.output.iter()
-        .for_each(|o| {
-            sc.add_output(
-                o.script_pubkey
-                    .as_bytes()
-                    .get(2..)
-                    .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
-                    .map(|k| k.public_key(Parity::Even))
-                    .unwrap()
-            );
-        });
+    tx.output.iter().for_each(|o| { scan.add_tx_out(o); });
 
-    let outputs = sc.xxx();
+    let outputs = scan.xxx();
     let output = outputs.iter().next().unwrap();
 
     // Spend

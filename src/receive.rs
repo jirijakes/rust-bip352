@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use bitcoin::secp256k1::{
     Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
-use bitcoin::OutPoint;
+use bitcoin::{OutPoint, Script, TxOut};
 
 use crate::address::SilentPaymentAddress;
 use crate::{Aggregate, InputNonce, SharedSecret, SilentPaymentOutput};
@@ -63,8 +63,35 @@ impl Scan {
         self
     }
 
-    pub fn add_output(&mut self, output: PublicKey) -> &mut Self {
-        self.outputs.push(output);
+    /// Adds a transaction output, if eligibile, to be examined whether
+    /// it is an output of a Silent Payment. Only taproot outputs are
+    /// considered, other output types are ignored.
+    pub fn add_tx_out(&mut self, tx_out: &TxOut) -> &mut Self {
+        self.add_script_pubkey(&tx_out.script_pubkey)
+    }
+
+    /// Adds script of a transaction output, if eligibile, to be examined
+    /// whether it is an output of a Silent Payment. Only taproot outputs are
+    /// considered, other output types are ignored.
+    pub fn add_script_pubkey(&mut self, spk: &Script) -> &mut Self {
+        if spk.is_v1_p2tr() {
+            self.add_output(
+                spk.as_bytes()
+                    .get(2..)
+                    .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
+                    .unwrap(),
+            );
+        }
+
+        self
+    }
+
+    /// Unconditionally adds a public key of a transaction output to be be examined
+    /// whether it is an output of a Silent Payment. Only taproot outputs are eligible.
+    /// If unsure, use [`add_script_pubkey`] or [`add_tx_out`].
+    pub fn add_output(&mut self, output: XOnlyPublicKey) -> &mut Self {
+        // TODO: Does it have to push PublicKey or would XOnlyPublicKey be enough?
+        self.outputs.push(output.public_key(Parity::Even));
         self
     }
 

@@ -33,7 +33,6 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
     use bip352::receive::Scan;
-    use bitcoin::secp256k1::Parity;
 
     receiving.iter().for_each(|r| {
         let spend_key =
@@ -56,11 +55,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .for_each(|(expected, spa)| assert_eq!(&spa.to_string(), expected, "{test}"));
 
         r.given.outputs.iter().for_each(|o| {
-            scan.add_output(
-                XOnlyPublicKey::from_str(o)
-                    .unwrap()
-                    .public_key(Parity::Even),
-            );
+            scan.add_output(XOnlyPublicKey::from_str(o).unwrap());
         });
 
         r.given.outpoints.iter().for_each(|(txid, vout)| {

@@ -80,17 +80,21 @@ impl Scan {
         prevouts: &HashMap<OutPoint, TxOut>,
         tx: &Transaction,
     ) -> &mut Self {
-        tx.input.iter().for_each(|tx_in| {
-            self.add_outpoint(&tx_in.previous_output);
-            if let Some(prevout) = prevouts.get(&tx_in.previous_output) {
-                if let Some(pk) = input_public_key(&prevout.script_pubkey, tx_in) {
-                    self.add_public_key(&pk);
-                }
-            }
-        });
-        tx.output.iter().for_each(|tx_out| {
+        for tx_out in &tx.output {
             self.add_output(tx_out);
-        });
+        }
+
+        for tx_in in &tx.input {
+            self.add_outpoint(&tx_in.previous_output);
+
+            prevouts
+                .get(&tx_in.previous_output)
+                .and_then(|prevout| input_public_key(&prevout.script_pubkey, tx_in))
+                .iter()
+                .for_each(|pk| {
+                    self.add_public_key(pk);
+                });
+        }
 
         self
     }

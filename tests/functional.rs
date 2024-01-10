@@ -37,20 +37,19 @@ fn test_me() {
     let spend_keys = xpriv.derive_priv(&secp, &[ChildNumber::Hardened { index: 352 }, ChildNumber::Hardened { index: 1 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 0 }]).unwrap();
     let spend_key = spend_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key;
 
-    let spaddress = SilentPaymentAddress::new(spend_key.public_key(&secp), scan_key.public_key(&secp));
-
-    //
-    // Sender
-    //
-
-    let mut sp = SilentPayment::new(&secp);
-    sp.add_recipient(spaddress);
-
     let client = {
         let mut conf = bitcoind::Conf::default();
         conf.args = vec!["-regtest", "-txindex=1", "-fallbackfee=0.0002"];
         &BitcoinD::with_conf("/usr/bin/bitcoind", &conf).unwrap().client
     };
+
+    //
+    // Sender
+    //
+
+    let mut silent_payment = SilentPayment::new(&secp);
+    let spaddress = SilentPaymentAddress::new(spend_key.public_key(&secp), scan_key.public_key(&secp));
+    silent_payment.add_recipient(spaddress);
 
     // Collect all private keys
     let descs = client.call::<ListDescriptorsResult>("listdescriptors", &[Value::Bool(true)]).unwrap();
@@ -65,12 +64,11 @@ fn test_me() {
     let tx1 = client.send_to_address(&addr1, Amount::from_btc(10.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx1 = client.get_transaction(&tx1, None).unwrap().transaction().unwrap();
-    let out1 = tx1.output.iter().position(|o| o.script_pubkey == addr1.script_pubkey()).unwrap();
-    let outpoint1 = OutPoint::new(tx1.txid(), out1 as u32);
-    sp.add_outpoint(outpoint1);
+    let out1 = tx1.output.iter().position(|o| o.script_pubkey == addr1.script_pubkey()).unwrap() as u32;
+    silent_payment.add_outpoint(OutPoint::new(tx1.txid(), out1));
     let (desc1, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr1.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc1) {
-        sp.add_private_key(sec);
+        silent_payment.add_private_key(sec);
     }
 
     // Create second output and use it as second input for silent payment
@@ -79,16 +77,15 @@ fn test_me() {
     let tx2 = client.send_to_address(&addr2, Amount::from_btc(20.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx2 = client.get_transaction(&tx2, None).unwrap().transaction().unwrap();
-    let out2 = tx2.output.iter().position(|o| o.script_pubkey == addr2.script_pubkey()).unwrap();
-    let outpoint2 = OutPoint::new(tx2.txid(), out2 as u32);
-    sp.add_outpoint(outpoint2);
+    let out2 = tx2.output.iter().position(|o| o.script_pubkey == addr2.script_pubkey()).unwrap() as u32;
+    silent_payment.add_outpoint(OutPoint::new(tx2.txid(), out2));
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc2) {
-        sp.add_private_key(sec);
+        silent_payment.add_private_key(sec);
     }
 
     // Collect output scripts for silent payment
-    let outputs = sp
+    let outputs = silent_payment
         .generate_output_scripts()
         .iter()
         .map(|o| (
@@ -101,8 +98,8 @@ fn test_me() {
     let tx = client
         .create_raw_transaction(
             &[
-                CreateRawTransactionInput { txid: outpoint1.txid, vout: outpoint1.vout, sequence: None },
-                CreateRawTransactionInput { txid: outpoint2.txid, vout: outpoint2.vout, sequence: None },
+                CreateRawTransactionInput { txid: tx1.txid(), vout: out1, sequence: None },
+                CreateRawTransactionInput { txid: tx2.txid(), vout: out2, sequence: None },
             ],
             &outputs,
             None,
@@ -110,7 +107,7 @@ fn test_me() {
         )
         .unwrap();
 
-    let funded = client.fund_raw_transaction(&tx, Some(&Default::default()), None).unwrap();
+    let funded = client.fund_raw_transaction(&tx, None, None).unwrap();
     let signed = client.sign_raw_transaction_with_wallet(&funded.hex, None, None).unwrap();
     let txid = client.send_raw_transaction(&signed.hex).unwrap();
     client.generate_to_address(101, &addr).unwrap();

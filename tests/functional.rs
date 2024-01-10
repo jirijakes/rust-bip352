@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use bip352::address::SilentPaymentAddress;
@@ -6,8 +7,8 @@ use bip352::receive::Scan;
 use bip352::send::SilentPayment;
 use bip352::spend::Spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin::secp256k1::{Secp256k1, XOnlyPublicKey};
-use bitcoin::{Address, OutPoint, PrivateKey};
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::{Address, OutPoint, PrivateKey, TxOut};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
 use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::CreateRawTransactionInput;
 use bitcoind::bitcoincore_rpc::RpcApi;
@@ -120,28 +121,28 @@ fn test_me() {
 
     // Scan
 
-    let mut scan = Scan::new(scan_key, spend_key.public_key(&secp), vec![]);
+    let scan = Scan::new(scan_key, spend_key.public_key(&secp), vec![]);
 
     let tx = client.get_raw_transaction(&txid, None).unwrap();
-    tx.input.iter().for_each(|i| { scan.add_outpoint(&i.previous_output); });
-    let prevs = tx.input.iter().map(|vin| client.get_raw_transaction(&vin.previous_output.txid, None).unwrap().output[vin.previous_output.vout as usize].script_pubkey.clone()).collect::<Vec<_>>();
-    prevs.iter().zip(&tx.input)
-        .for_each(|(prevout, input)| if let Some(pk) = input_public_key(prevout, input) {
-            scan.add_public_key(&pk);
-        });
-    tx.output.iter().for_each(|o| { scan.add_output(o); });
+    let prevs: HashMap<OutPoint, TxOut> = tx.input.iter().map(|vin| {
+        let prev_tx = client.get_raw_transaction(&vin.previous_output.txid, None).unwrap();
+        (vin.previous_output, prev_tx.output[vin.previous_output.vout as usize].clone())
+    }).collect();
 
-    let outputs = scan.xxx();
+    let outputs = scan.scan_from_transaction(&prevs, &tx);
     let output = outputs.iter().next().unwrap();
 
     // Spend
 
     let mut spend = Spend::new();
-    tx.input.iter().for_each(|i| { spend.add_outpoint(&i.previous_output); });
-    prevs.iter().zip(&tx.input)
-        .for_each(|(prevout, input)| if let Some(pk) = input_public_key(prevout, input) {
-            spend.add_public_key(&pk);
-        });
+    tx.input.iter().for_each(|i| {
+        spend.add_outpoint(&i.previous_output);
+        if let Some(prev) = prevs.get(&i.previous_output) {
+            if let Some(pk) = input_public_key(&prev.script_pubkey, i) {
+                spend.add_public_key(&pk);
+            }
+        }
+    });
 
     let vout = tx.output.iter().position(|o| o.value == 10000000).unwrap() as u32;
     let addr3 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();

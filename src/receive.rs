@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use bitcoin::secp256k1::{
     Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
-use bitcoin::{OutPoint, Script, TxOut};
+use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputNonce, SharedSecret, SilentPaymentOutput};
+use crate::{input_public_key, Aggregate, InputNonce, SharedSecret, SilentPaymentOutput};
 
 pub struct Scan {
     scan_key: SecretKey,
@@ -60,6 +60,38 @@ impl Scan {
 
     pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut Self {
         self.input_nonce.add_outpoint(outpoint);
+        self
+    }
+
+    /// Scans transaction and its previous outputs for Silent Payment outputs.
+    pub fn scan_from_transaction(
+        self,
+        prevouts: &HashMap<OutPoint, TxOut>,
+        tx: &Transaction,
+    ) -> HashSet<SilentPaymentOutput> {
+        let mut scan = self;
+        scan.add_from_transaction(prevouts, tx);
+        scan.xxx()
+    }
+
+    /// Adds all necessary data from a transaction and its previous outputs.
+    pub fn add_from_transaction(
+        &mut self,
+        prevouts: &HashMap<OutPoint, TxOut>,
+        tx: &Transaction,
+    ) -> &mut Self {
+        tx.input.iter().for_each(|tx_in| {
+            self.add_outpoint(&tx_in.previous_output);
+            if let Some(prevout) = prevouts.get(&tx_in.previous_output) {
+                if let Some(pk) = input_public_key(&prevout.script_pubkey, tx_in) {
+                    self.add_public_key(&pk);
+                }
+            }
+        });
+        tx.output.iter().for_each(|tx_out| {
+            self.add_output(tx_out);
+        });
+
         self
     }
 

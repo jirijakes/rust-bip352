@@ -60,7 +60,7 @@ fn test_me() {
     let addr = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
     client.generate_to_address(101, &addr).unwrap();
 
-    // Create one output and use it as one input for silent payment
+    // Create one output (P2WPKH) and use it as one input for silent payment
     let addr1 = client.get_new_address(None, Some(AddressType::Bech32)).unwrap().require_network(Network::Regtest).unwrap();
     let tx1 = client.send_to_address(&addr1, Amount::from_btc(10.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
@@ -72,7 +72,7 @@ fn test_me() {
         silent_payment.add_private_key(sec);
     }
 
-    // Create second output and use it as second input for silent payment
+    // Create second (P2TR) output and use it as second input for silent payment
     let addr2 = client.get_new_address(None, Some(AddressType::Bech32m)).unwrap().require_network(Network::Regtest).unwrap();
     let tx2 = client.send_to_address(&addr2, Amount::from_btc(15.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
@@ -85,7 +85,7 @@ fn test_me() {
         silent_payment.add_taproot_private_key(sec);
     }
 
-    // Create second output and use it as second input for silent payment
+    // Create third output (P2PKH) and use it as third input for silent payment
     let addr3 = client.get_new_address(None, Some(AddressType::Legacy)).unwrap().require_network(Network::Regtest).unwrap();
     let tx3 = client.send_to_address(&addr3, Amount::from_btc(20.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();

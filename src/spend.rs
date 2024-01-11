@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+
 use bitcoin::secp256k1::{
     KeyPair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, XOnlyPublicKey,
 };
-use bitcoin::OutPoint;
+use bitcoin::{OutPoint, Transaction, TxOut};
 
-use crate::{silent_payment_signing_key, Aggregate, InputHash, SharedSecret};
+use crate::{input_public_key, silent_payment_signing_key, Aggregate, InputHash, SharedSecret};
 
+#[derive(Default)]
 pub struct Spend {
     input_public_key: Aggregate<PublicKey>,
     input_hash: InputHash,
@@ -16,6 +19,28 @@ impl Spend {
             input_public_key: Default::default(),
             input_hash: Default::default(),
         }
+    }
+
+    pub fn from_transaction(prevouts: &HashMap<OutPoint, TxOut>, tx: &Transaction) -> Self {
+        let mut spend = Self::new();
+        spend.add_from_transaction(prevouts, tx);
+        spend
+    }
+
+    pub fn add_from_transaction(
+        &mut self,
+        prevouts: &HashMap<OutPoint, TxOut>,
+        tx: &Transaction,
+    ) -> &mut Self {
+        tx.input.iter().for_each(|i| {
+            self.add_outpoint(&i.previous_output);
+            if let Some(prev) = prevouts.get(&i.previous_output) {
+                if let Some(pk) = input_public_key(&prev.script_pubkey, i) {
+                    self.add_public_key(&pk);
+                }
+            }
+        });
+        self
     }
 
     pub fn add_xonly_public_key(&mut self, key: &XOnlyPublicKey) -> &mut Self {

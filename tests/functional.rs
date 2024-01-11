@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use bip352::address::SilentPaymentAddress;
-use bip352::input_public_key;
 use bip352::receive::Scan;
 use bip352::send::SilentPayment;
 use bip352::spend::Spend;
@@ -96,7 +95,7 @@ fn test_me() {
     if let Some(sec) = keys.for_descriptor(&desc3) {
         silent_payment.add_private_key(sec);
     }
-    
+
     // Collect output scripts for silent payment
     let outputs = silent_payment
         .generate_output_scripts()
@@ -145,28 +144,18 @@ fn test_me() {
 
     // Spend
 
-    let mut spend = Spend::new();
-    tx.input.iter().for_each(|i| {
-        spend.add_outpoint(&i.previous_output);
-        if let Some(prev) = prevs.get(&i.previous_output) {
-            if let Some(pk) = input_public_key(&prev.script_pubkey, i) {
-                spend.add_public_key(&pk);
-            }
-        }
-    });
-
     let vout = tx.output.iter().position(|o| o.value == 10000000).unwrap() as u32;
-    let addr3 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
+    let addr4 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
     let spending_tx = client
         .create_raw_transaction(
             &[CreateRawTransactionInput { txid: tx.txid(), vout, sequence: None }],
-            &[(addr3.to_string(), Amount::from_btc(0.07).unwrap())].into_iter().collect(),
+            &[(addr4.to_string(), Amount::from_btc(0.07).unwrap())].into_iter().collect(),
             None,
             None
         ).unwrap();
     let funded = client.fund_raw_transaction(&spending_tx, None, None).unwrap();
 
-    let keypair = spend.signing_keypair(scan_key, spend_key, output.k(), output.label());
+    let keypair = Spend::from_transaction(&prevs, &tx).signing_keypair(scan_key, spend_key, output.k(), output.label());
     let signed = client
         .sign_raw_transaction_with_key(
             &funded.hex,

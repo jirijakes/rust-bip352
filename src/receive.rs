@@ -6,7 +6,7 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{input_public_key, Aggregate, InputNonce, SharedSecret, SilentPaymentOutput};
+use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
 
 pub struct Scan {
     scan_key: SecretKey,
@@ -14,7 +14,7 @@ pub struct Scan {
     labels: Vec<Scalar>,
     outputs: Vec<PublicKey>,
     input_public_key: Aggregate<PublicKey>,
-    input_nonce: InputNonce,
+    input_hash: InputHash,
 }
 
 impl Scan {
@@ -27,7 +27,7 @@ impl Scan {
                 .map(|x| Scalar::from_be_bytes(x).unwrap())
                 .collect(),
             outputs: Default::default(),
-            input_nonce: Default::default(),
+            input_hash: Default::default(),
             input_public_key: Default::default(),
         }
     }
@@ -54,12 +54,12 @@ impl Scan {
 
     pub fn add_public_key(&mut self, public_key: &PublicKey) -> &mut Self {
         self.input_public_key.add_key(public_key);
-        self.input_nonce.add_input_public_key(public_key).unwrap();
+        self.input_hash.add_input_public_key(public_key).unwrap();
         self
     }
 
     pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut Self {
-        self.input_nonce.add_outpoint(outpoint);
+        self.input_hash.add_outpoint(outpoint);
         self
     }
 
@@ -135,7 +135,7 @@ impl Scan {
         let secp = &Secp256k1::new();
 
         let shared_secret = SharedSecret::new(
-            self.input_nonce.hash().unwrap(),
+            self.input_hash.hash().unwrap(),
             self.input_public_key.get().unwrap(),
             self.scan_key,
             secp,

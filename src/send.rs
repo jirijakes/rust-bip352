@@ -51,12 +51,12 @@ use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputNonce, SharedSecret};
+use crate::{Aggregate, InputHash, SharedSecret};
 
 pub struct SilentPayment<'a> {
     recipients: Vec<SilentPaymentAddress>,
     input_secret_key: Aggregate<SecretKey>,
-    input_nonce: InputNonce,
+    input_hash: InputHash,
     secp: &'a Secp256k1<All>,
 }
 
@@ -66,7 +66,7 @@ impl<'a> SilentPayment<'a> {
             secp,
             recipients: Default::default(),
             input_secret_key: Default::default(),
-            input_nonce: Default::default(),
+            input_hash: Default::default(),
         }
     }
 
@@ -76,6 +76,8 @@ impl<'a> SilentPayment<'a> {
     }
 
     pub fn add_taproot_private_key(&mut self, key: SecretKey) -> &mut SilentPayment<'a> {
+        // self.input_secret_key.add_key(&key);
+
         let (_, y_parity) = key.public_key(self.secp).x_only_public_key();
 
         let checked_key = if y_parity == Parity::Odd {
@@ -83,7 +85,11 @@ impl<'a> SilentPayment<'a> {
         } else {
             key
         };
+        self.input_hash
+            .add_input_public_key(&checked_key.public_key(self.secp))
+            .unwrap();
 
+        // self
         self.add_private_key(checked_key)
     }
 
@@ -104,7 +110,7 @@ impl<'a> SilentPayment<'a> {
     /// key signing taproot output, the Silent Payment may be unspendable.
     pub fn add_private_key(&mut self, key: SecretKey) -> &mut SilentPayment<'a> {
         self.input_secret_key.add_key(&key);
-        self.input_nonce
+        self.input_hash
             .add_input_public_key(&key.public_key(self.secp))
             .unwrap();
         self
@@ -120,13 +126,13 @@ impl<'a> SilentPayment<'a> {
     /// with certain properties should be used. If an outpoint that does not meet these
     /// properties is added, recipient will have no way how to identify and spend the payment.
     pub fn add_outpoint(&mut self, outpoint: OutPoint) -> &mut SilentPayment<'a> {
-        self.input_nonce.add_outpoint(&outpoint);
+        self.input_hash.add_outpoint(&outpoint);
         self
     }
 
     #[must_use]
     pub fn generate_output_scripts(self) -> Vec<ScriptBuf> {
-        let input_nonce = self.input_nonce.hash().unwrap();
+        let input_hash = self.input_hash.hash().unwrap();
         let input_secret_key = self.input_secret_key.get().unwrap();
 
         // scan_key -> spend_keys
@@ -144,7 +150,7 @@ impl<'a> SilentPayment<'a> {
             .into_iter()
             .flat_map(|(b_scan, b_ms)| {
                 let shared_secret =
-                    SharedSecret::new(input_nonce, b_scan, input_secret_key, self.secp);
+                    SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp);
 
                 b_ms.into_iter().zip(0..).map(move |((index, b_m), k)| {
                     (index, shared_secret.destination_output(b_m, k, self.secp))

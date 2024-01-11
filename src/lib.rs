@@ -57,7 +57,7 @@ impl SilentPaymentOutput {
 }
 
 #[derive(Default)]
-pub struct InputNonce {
+pub struct InputHash {
     /// Holds the least (so far) outpoint bytes.
     least_outpoint: Option<[u8; 36]>,
 
@@ -69,22 +69,22 @@ pub struct InputNonce {
     public_key: Aggregate<PublicKey>,
 }
 
-impl InputNonce {
-    /// Creates new, empty input nonce.
+impl InputHash {
+    /// Creates new, empty input hash.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registers new outpoint that is subject of calculation of the input nonce.
-    pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut InputNonce {
+    /// Registers new outpoint that is subject of calculation of the input hash.
+    pub fn add_outpoint(&mut self, outpoint: &OutPoint) -> &mut InputHash {
         let bytes: [u8; 36] = serialize(outpoint)
             .try_into()
             .expect("outpoint serializes to 36 bytes");
         self.add_outpoint_serialized(bytes)
     }
 
-    /// Registers new already-serialized outpoint that is subject of calculation of the input nonce.
-    pub fn add_outpoint_serialized(&mut self, bytes: [u8; 36]) -> &mut InputNonce {
+    /// Registers new already-serialized outpoint that is subject of calculation of the input hash.
+    pub fn add_outpoint_serialized(&mut self, bytes: [u8; 36]) -> &mut InputHash {
         match self.least_outpoint.as_ref() {
             Some(least) if least <= &bytes => {}
             _ => {
@@ -100,31 +100,31 @@ impl InputNonce {
         self
     }
 
-    pub fn add_input_public_key(&mut self, public_key: &PublicKey) -> Option<&mut InputNonce> {
+    pub fn add_input_public_key(&mut self, public_key: &PublicKey) -> Option<&mut InputHash> {
         self.public_key.add_key(public_key)?;
         Some(self)
     }
 
-    /// Returns input nonce.
-    pub fn hash(self) -> Result<Scalar, InputNonceError> {
+    /// Returns input hash.
+    pub fn hash(self) -> Result<Scalar, InputHashError> {
         let mut engine = sha256::Hash::engine();
 
         // TODO: Remove when test vector updated.
         self.outpoints.iter().for_each(|o| engine.input(o));
 
         // TODO: Uncomment when test vector updated
-        // let outpoint = self.least_outpoint.ok_or(InputNonceError::NoOutPoint)?;
+        // let outpoint = self.least_outpoint.ok_or(InputHashError::NoOutPoint)?;
         // engine.input(&outpoint);
-        // let public_key = self.public_key.get().ok_or(InputNonceError::NoPublicKey)?;
+        // let public_key = self.public_key.get().ok_or(InputHashError::NoPublicKey)?;
         // engine.input(&public_key.serialize());
 
         let hash = sha256::Hash::from_engine(engine);
-        Scalar::from_be_bytes(hash.to_byte_array()).map_err(|_| InputNonceError::InvalidValue)
+        Scalar::from_be_bytes(hash.to_byte_array()).map_err(|_| InputHashError::InvalidValue)
     }
 }
 
 #[derive(Debug)]
-pub enum InputNonceError {
+pub enum InputHashError {
     NoOutPoint,
     NoPublicKey,
     InvalidValue,
@@ -218,12 +218,12 @@ pub struct SharedSecret([u8; 33]);
 
 impl SharedSecret {
     pub fn new<C: Verification>(
-        input_nonce: Scalar,
+        input_hash: Scalar,
         pk: PublicKey,
         sk: SecretKey,
         secp: &Secp256k1<C>,
     ) -> SharedSecret {
-        let ecdh = sk.mul_tweak(&input_nonce).unwrap();
+        let ecdh = sk.mul_tweak(&input_hash).unwrap();
         SharedSecret(pk.mul_tweak(secp, &ecdh.into()).unwrap().serialize())
     }
 

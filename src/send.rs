@@ -116,15 +116,13 @@ impl<'a> SilentPayment<'a> {
         self
     }
 
-    /// Unconditionally registers the given outpoint for the Silent Payment.
-    /// **Warning**: Each of the outpoints added using this method is going to be used. That
-    /// may render the Silent Payment to be incorrect and unspendable. If unsure, use _TBA_ instead.
+    /// Registers outpoint for the Silent Payment.
     ///
     /// ### Under the hood
-    /// These outpoints, together with private keys, are used to derive
-    /// shared secret using a version of Diffie-Hellman exchange. However, only outpoints
-    /// with certain properties should be used. If an outpoint that does not meet these
-    /// properties is added, recipient will have no way how to identify and spend the payment.
+    /// These outpoints, together with public keys corresponding to selected inputs, are used to derive
+    /// shared secret using a version of Diffie-Hellman exchange. All outpoints participating
+    /// in a transaction are to be registered using the method, however only the lexicographically
+    /// smallest one is to be used at the end.
     pub fn add_outpoint(&mut self, outpoint: OutPoint) -> &mut SilentPayment<'a> {
         self.input_hash.add_outpoint(&outpoint);
         self

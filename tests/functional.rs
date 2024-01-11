@@ -7,10 +7,12 @@ use bip352::receive::Scan;
 use bip352::send::SilentPayment;
 use bip352::spend::Spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
-use bitcoin::secp256k1::Secp256k1;
+use bitcoin::key::TapTweak;
+use bitcoin::secp256k1::{KeyPair, Secp256k1};
+use bitcoin::taproot::TapTweakHash;
 use bitcoin::{Address, OutPoint, PrivateKey, TxOut};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
-use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::CreateRawTransactionInput;
+use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTransactionInput};
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::BitcoinD;
 use miniscript::Descriptor;
@@ -60,7 +62,7 @@ fn test_me() {
     client.generate_to_address(101, &addr).unwrap();
 
     // Create one output and use it as one input for silent payment
-    let addr1 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
+    let addr1 = client.get_new_address(None, Some(AddressType::Bech32)).unwrap().require_network(Network::Regtest).unwrap();
     let tx1 = client.send_to_address(&addr1, Amount::from_btc(10.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx1 = client.get_transaction(&tx1, None).unwrap().transaction().unwrap();
@@ -72,8 +74,7 @@ fn test_me() {
     }
 
     // Create second output and use it as second input for silent payment
-    // TODO: Change to Bech32m and tapproot
-    let addr2 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
+    let addr2 = client.get_new_address(None, Some(AddressType::Bech32m)).unwrap().require_network(Network::Regtest).unwrap();
     let tx2 = client.send_to_address(&addr2, Amount::from_btc(20.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx2 = client.get_transaction(&tx2, None).unwrap().transaction().unwrap();
@@ -81,9 +82,12 @@ fn test_me() {
     silent_payment.add_outpoint(OutPoint::new(tx2.txid(), out2));
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc2) {
-        silent_payment.add_private_key(sec);
+        let sec = KeyPair::from_secret_key(&secp, &sec).tap_tweak(&secp, None).to_inner().secret_key();
+        silent_payment.add_taproot_private_key(sec);
     }
 
+    // TODO: Add legacy input
+    
     // Collect output scripts for silent payment
     let outputs = silent_payment
         .generate_output_scripts()

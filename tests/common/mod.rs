@@ -55,20 +55,20 @@ pub fn collect_xprivs(
 pub fn extract_origin(
     desc: &Descriptor<DescriptorPublicKey>,
 ) -> Option<&(Fingerprint, DerivationPath)> {
+    fn get_origin(pk: &DescriptorPublicKey) -> Option<&(Fingerprint, DerivationPath)> {
+        match pk {
+            DescriptorPublicKey::Single(s) => s.origin.as_ref(),
+            DescriptorPublicKey::XPub(x) => x.origin.as_ref(),
+            DescriptorPublicKey::MultiXPub(_) => None,
+        }
+    }
+
     match desc {
         Descriptor::Bare(_) => None,
-        Descriptor::Pkh(_) => None,
-        Descriptor::Wpkh(w) => match w.as_inner() {
-            DescriptorPublicKey::Single(s) => s.origin.as_ref(),
-            DescriptorPublicKey::XPub(x) => x.origin.as_ref(),
-            DescriptorPublicKey::MultiXPub(_) => None,
-        },
-        Descriptor::Sh(_) => None,
+        Descriptor::Pkh(p) => get_origin(p.as_inner()),
+        Descriptor::Wpkh(w) => get_origin(w.as_inner()),
+        Descriptor::Sh(_) => todo!(),
         Descriptor::Wsh(_) => None,
-        Descriptor::Tr(tr) => match tr.internal_key() {
-            DescriptorPublicKey::Single(s) => s.origin.as_ref(),
-            DescriptorPublicKey::XPub(x) => x.origin.as_ref(),
-            DescriptorPublicKey::MultiXPub(_) => None,
-        },
+        Descriptor::Tr(tr) => get_origin(tr.internal_key()),
     }
 }

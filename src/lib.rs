@@ -290,7 +290,13 @@ pub fn input_public_key(prevout: &Script, input: &TxIn) -> Option<PublicKey> {
             .get(2..)
             .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
             .map(|k| k.public_key(Parity::Even))
-    // } else if prevout.script_pubkey.is_p2sh() { TODO: P2SH-P2WPKH
+    } else if prevout.is_p2sh()
+        && matches!(input.script_sig.as_bytes(), [0x16, 0x0, 0x14, x@..] if x.len() == 20)
+    {
+        input
+            .witness
+            .last()
+            .and_then(|b| PublicKey::from_slice(b).ok())
     } else {
         None
     }

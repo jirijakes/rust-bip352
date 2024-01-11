@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bitcoin::bip32::{DerivationPath, ExtendedPrivKey, Fingerprint};
 use bitcoin::secp256k1::{All, Secp256k1, SecretKey};
-use miniscript::descriptor::DescriptorSecretKey;
+use miniscript::descriptor::{DescriptorSecretKey, ShInner};
 use miniscript::{Descriptor, DescriptorPublicKey};
 use serde::Deserialize;
 
@@ -67,7 +67,10 @@ pub fn extract_origin(
         Descriptor::Bare(_) => None,
         Descriptor::Pkh(p) => get_origin(p.as_inner()),
         Descriptor::Wpkh(w) => get_origin(w.as_inner()),
-        Descriptor::Sh(_) => todo!(),
+        Descriptor::Sh(s) => match s.as_inner() {
+            ShInner::Wpkh(w) => get_origin(w.as_inner()),
+            _ => None,
+        },
         Descriptor::Wsh(_) => None,
         Descriptor::Tr(tr) => get_origin(tr.internal_key()),
     }

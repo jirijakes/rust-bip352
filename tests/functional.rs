@@ -177,7 +177,7 @@ fn test_me() {
 
     let txid = client.send_raw_transaction(&signed.hex).unwrap();
     client.generate_to_address(10, &addr).unwrap();
-    let tx = client.get_raw_transaction_info(&txid, None).unwrap();
+    let tx = client.get_raw_transaction_info(&txid, None).unwrap().transaction().unwrap();
 
-    println!("{:?}", tx);
+    assert!(tx.output.iter().any(|o| o.value == (0.07 * 1e8) as u64));
 }

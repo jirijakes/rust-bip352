@@ -9,7 +9,6 @@ use bip352::spend::Spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{KeyPair, Secp256k1};
-use bitcoin::taproot::TapTweakHash;
 use bitcoin::{Address, OutPoint, PrivateKey, TxOut};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
 use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTransactionInput};
@@ -82,7 +81,7 @@ fn test_me() {
     silent_payment.add_outpoint(OutPoint::new(tx2.txid(), out2));
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc2) {
-        let sec = KeyPair::from_secret_key(&secp, &sec).tap_tweak(&secp, None).to_inner().secret_key();
+        let sec = KeyPair::from_secret_key(&secp, &sec).tap_tweak(&secp, None).to_inner();
         silent_payment.add_taproot_private_key(sec);
     }
 

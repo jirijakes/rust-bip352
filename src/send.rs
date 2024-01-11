@@ -75,9 +75,11 @@ impl<'a> SilentPayment<'a> {
         self
     }
 
-    pub fn add_taproot_private_key(&mut self, key: SecretKey) -> &mut SilentPayment<'a> {
-        // self.input_secret_key.add_key(&key);
-
+    pub fn add_taproot_private_key<SK: Into<SecretKey>>(
+        &mut self,
+        key: SK,
+    ) -> &mut SilentPayment<'a> {
+        let key = key.into();
         let (_, y_parity) = key.public_key(self.secp).x_only_public_key();
 
         let checked_key = if y_parity == Parity::Odd {
@@ -89,7 +91,6 @@ impl<'a> SilentPayment<'a> {
             .add_input_public_key(&checked_key.public_key(self.secp))
             .unwrap();
 
-        // self
         self.add_private_key(checked_key)
     }
 
@@ -108,7 +109,8 @@ impl<'a> SilentPayment<'a> {
     /// Additionally, private keys signing taproot inputs have to be checked for Y-coordinate
     /// ([`add_taproot_private_key`](Self::add_taproot_private_key) checks for them). If this method is used to add private
     /// key signing taproot output, the Silent Payment may be unspendable.
-    pub fn add_private_key(&mut self, key: SecretKey) -> &mut SilentPayment<'a> {
+    pub fn add_private_key<SK: Into<SecretKey>>(&mut self, key: SK) -> &mut SilentPayment<'a> {
+        let key = key.into();
         self.input_secret_key.add_key(&key);
         self.input_hash
             .add_input_public_key(&key.public_key(self.secp))

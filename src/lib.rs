@@ -292,7 +292,7 @@ pub fn input_public_key(prevout: &Script, input: &TxIn) -> Option<PublicKey> {
             .map(|k| k.public_key(Parity::Even))
     // } else if prevout.script_pubkey.is_p2sh() { TODO: P2SH-P2WPKH
     } else {
-        prevout.p2pk_public_key().map(|pk| pk.inner)
+        None
     }
 }
 

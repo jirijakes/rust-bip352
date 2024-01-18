@@ -29,6 +29,7 @@ dependencies = [
  "hex",
  "indexmap",
  "miniscript",
+ "rand",
  "serde",
  "serde_json",
 ]

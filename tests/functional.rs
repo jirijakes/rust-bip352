@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use bip352::address::SilentPaymentAddress;
 use bip352::receive::Scan;
@@ -14,6 +13,7 @@ use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTran
 use bitcoind::bitcoincore_rpc::RpcApi;
 use bitcoind::BitcoinD;
 use miniscript::Descriptor;
+use rand::random;
 use serde_json::Value;
 
 use crate::common::ListDescriptorsResult;
@@ -29,7 +29,7 @@ fn test_me() {
     // Receiver
     //
 
-    let xpriv = ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK").unwrap();
+    let xpriv = ExtendedPrivKey::new_master(Network::Regtest, &random::<[u8; 32]>()).unwrap();
 
     let scan_keys = xpriv.derive_priv(&secp, &[ChildNumber::Hardened { index: 352 }, ChildNumber::Hardened { index: 1 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 1 }]).unwrap();
     let scan_key = scan_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key;

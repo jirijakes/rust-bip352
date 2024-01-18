@@ -158,10 +158,10 @@ impl Scan {
         self.outputs
             .iter()
             .fold((HashSet::new(), 0u32), |(mut acc, k), &output| {
-                let (pk, _) = shared_secret.destination_public_key(self.spend_key, k, secp);
+                let (pk, tk) = shared_secret.destination_public_key(self.spend_key, k, secp);
 
                 let next_output = if output == pk {
-                    Some(SilentPaymentOutput::new(output.x_only_public_key().0, k))
+                    Some(SilentPaymentOutput::new(output.x_only_public_key().0, tk))
                 } else {
                     [output, output.negate(secp)]
                         .iter()
@@ -171,7 +171,7 @@ impl Scan {
                             x.combine(&pk).ok().map(|x| {
                                 SilentPaymentOutput::new_with_label(
                                     x.x_only_public_key().0,
-                                    k,
+                                    tk,
                                     label.to_be_bytes(),
                                 )
                             })

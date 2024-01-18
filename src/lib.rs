@@ -19,26 +19,34 @@ pub mod spend;
 
 /// An output that has been detected as a Silent Payment together with
 /// all data that are needed to spend it. Wallets should index this.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct SilentPaymentOutput {
     public_key: XOnlyPublicKey,
-    k: u32,
+    tweak: Scalar,
     label: Option<[u8; 32]>,
 }
 
+impl std::hash::Hash for SilentPaymentOutput {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.public_key.hash(state);
+        self.tweak.to_be_bytes().hash(state);
+        self.label.hash(state);
+    }
+}
+
 impl SilentPaymentOutput {
-    pub fn new(public_key: XOnlyPublicKey, k: u32) -> Self {
+    pub fn new(public_key: XOnlyPublicKey, tweak: Scalar) -> Self {
         Self {
             public_key,
-            k,
+            tweak,
             label: None,
         }
     }
 
-    pub fn new_with_label(public_key: XOnlyPublicKey, k: u32, label: [u8; 32]) -> Self {
+    pub fn new_with_label(public_key: XOnlyPublicKey, tweak: Scalar, label: [u8; 32]) -> Self {
         Self {
             public_key,
-            k,
+            tweak,
             label: Some(label),
         }
     }
@@ -47,8 +55,8 @@ impl SilentPaymentOutput {
         self.public_key
     }
 
-    pub fn k(&self) -> u32 {
-        self.k
+    pub fn tweak(&self) -> Scalar {
+        self.tweak
     }
 
     pub fn label(&self) -> Option<[u8; 32]> {

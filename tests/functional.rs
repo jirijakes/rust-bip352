@@ -4,7 +4,7 @@ use std::str::FromStr;
 use bip352::address::SilentPaymentAddress;
 use bip352::receive::Scan;
 use bip352::send::SilentPayment;
-use bip352::spend::Spend;
+use bip352::spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{KeyPair, Secp256k1};
@@ -168,7 +168,7 @@ fn test_me() {
         ).unwrap();
     let funded = client.fund_raw_transaction(&spending_tx, None, None).unwrap();
 
-    let keypair = Spend::from_transaction(&prevs, &tx).signing_keypair(scan_key, spend_key, output.k(), output.label());
+    let keypair = spend::signing_keypair(spend_key, output.tweak(), output.label());
     let signed = client
         .sign_raw_transaction_with_key(
             &funded.hex,

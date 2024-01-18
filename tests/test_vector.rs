@@ -139,10 +139,7 @@ fn test_spending(
     test: &str,
     secp: &Secp256k1<All>,
 ) {
-    use bip352::spend::Spend;
-
-    let scan_key =
-        SecretKey::from_slice(&Vec::from_hex(&receiving.given.scan_priv_key).unwrap()).unwrap();
+    use bip352::spend;
 
     let spend_key =
         SecretKey::from_slice(&Vec::from_hex(&receiving.given.spend_priv_key).unwrap()).unwrap();
@@ -154,20 +151,7 @@ fn test_spending(
             .iter()
             .find(|o| o.public_key() == public_key)
         {
-            let mut spend = Spend::new();
-
-            receiving.given.outpoints.iter().for_each(|(txid, vout)| {
-                spend.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
-            });
-            receiving.given.input_pub_keys.iter().for_each(|pk| {
-                if pk.len() == 66 {
-                    spend.add_public_key(&pk.parse().unwrap());
-                } else {
-                    spend.add_xonly_public_key(&pk.parse().unwrap());
-                }
-            });
-
-            let keypair = spend.signing_keypair(scan_key, spend_key, spo.k(), spo.label());
+            let keypair = spend::signing_keypair(spend_key, spo.tweak(), spo.label());
 
             let msg = Message::from_slice(
                 sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),

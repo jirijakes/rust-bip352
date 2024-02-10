@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use bip352::address::SilentPaymentAddress;
-use bip352::receive::Scan;
+use bip352::receive::Receive;
 use bip352::send::SilentPayment;
 use bip352::spend;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
+use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{KeyPair, Secp256k1};
 use bitcoin::{Address, OutPoint, PrivateKey, TxOut};
@@ -30,14 +31,15 @@ fn test_me() {
     //
 
     let xpriv = ExtendedPrivKey::new_master(Network::Regtest, &random::<[u8; 32]>()).unwrap();
+    println!("Extended master key: {}", xpriv);
 
     let scan_keys = xpriv.derive_priv(&secp, &[ChildNumber::Hardened { index: 352 }, ChildNumber::Hardened { index: 1 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 1 }]).unwrap();
     let scan_key = scan_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key;
-
-    println!("{}", scan_key.display_secret());
+    println!("Scan secret key: {}", scan_key.display_secret());
     
     let spend_keys = xpriv.derive_priv(&secp, &[ChildNumber::Hardened { index: 352 }, ChildNumber::Hardened { index: 1 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 0 }]).unwrap();
     let spend_key = spend_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key;
+    println!("Spend secret key: {}", spend_key.display_secret());
 
     let client = {
         let mut conf = bitcoind::Conf::default();
@@ -51,6 +53,8 @@ fn test_me() {
 
     let mut silent_payment = SilentPayment::new(&secp);
     let spaddress = SilentPaymentAddress::new(spend_key.public_key(&secp), scan_key.public_key(&secp));
+    println!("Silent payment address: {}", spaddress);
+
     silent_payment.add_recipient(spaddress);
 
     // Collect all private keys
@@ -66,6 +70,7 @@ fn test_me() {
     let tx1 = client.send_to_address(&addr1, Amount::from_btc(2.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx1 = client.get_transaction(&tx1, None).unwrap().transaction().unwrap();
+    println!("Transaction for input 1: {}", serialize_hex(&tx1));
     let out1 = tx1.output.iter().position(|o| o.script_pubkey == addr1.script_pubkey()).unwrap() as u32;
     silent_payment.add_outpoint(OutPoint::new(tx1.txid(), out1));
     let (desc1, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr1.to_string())]).unwrap().desc).unwrap();
@@ -78,6 +83,7 @@ fn test_me() {
     let tx2 = client.send_to_address(&addr2, Amount::from_btc(4.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx2 = client.get_transaction(&tx2, None).unwrap().transaction().unwrap();
+    println!("Transaction for input 2: {}", serialize_hex(&tx2));
     let out2 = tx2.output.iter().position(|o| o.script_pubkey == addr2.script_pubkey()).unwrap() as u32;
     silent_payment.add_outpoint(OutPoint::new(tx2.txid(), out2));
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
@@ -91,6 +97,7 @@ fn test_me() {
     let tx3 = client.send_to_address(&addr3, Amount::from_btc(6.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx3 = client.get_transaction(&tx3, None).unwrap().transaction().unwrap();
+    println!("Transaction for input 3: {}", serialize_hex(&tx3));
     let out3 = tx3.output.iter().position(|o| o.script_pubkey == addr3.script_pubkey()).unwrap() as u32;
     silent_payment.add_outpoint(OutPoint::new(tx3.txid(), out3));
     let (desc3, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr3.to_string())]).unwrap().desc).unwrap();
@@ -103,6 +110,7 @@ fn test_me() {
     let tx4 = client.send_to_address(&addr4, Amount::from_btc(8.0).unwrap(), None, None, None, None, None, None).unwrap();
     client.generate_to_address(1, &addr).unwrap();
     let tx4 = client.get_transaction(&tx4, None).unwrap().transaction().unwrap();
+    println!("Transaction for input 4: {}", serialize_hex(&tx4));
     let out4 = tx4.output.iter().position(|o| o.script_pubkey == addr4.script_pubkey()).unwrap() as u32;
     silent_payment.add_outpoint(OutPoint::new(tx4.txid(), out4));
     let (desc4, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr4.to_string())]).unwrap().desc).unwrap();
@@ -146,15 +154,16 @@ fn test_me() {
 
     // Scan
 
-    let scan = Scan::new(scan_key, spend_key.public_key(&secp), vec![]);
+    let scan = Receive::new(scan_key, spend_key.public_key(&secp), vec![]);
 
     let tx = client.get_raw_transaction(&txid, None).unwrap();
+    println!("Transaction with silent payment: {}", serialize_hex(&tx));
     let prevs: HashMap<OutPoint, TxOut> = tx.input.iter().map(|vin| {
         let prev_tx = client.get_raw_transaction(&vin.previous_output.txid, None).unwrap();
         (vin.previous_output, prev_tx.output[vin.previous_output.vout as usize].clone())
     }).collect();
 
-    let outputs = scan.scan_from_transaction(&prevs, &tx);
+    let outputs = scan.scan_transaction(&prevs, &tx);
     let output = outputs.iter().next().unwrap();
 
     // Spend

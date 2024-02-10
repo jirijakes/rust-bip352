@@ -32,13 +32,13 @@ fn bip352_test_vector() {
 fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
-    use bip352::receive::Scan;
+    use bip352::receive::Receive;
 
     receiving.iter().for_each(|r| {
         let spend_key =
             SecretKey::from_slice(&Vec::from_hex(&r.given.spend_priv_key).unwrap()).unwrap();
 
-        let mut scan = Scan::new(
+        let scan = Receive::new(
             SecretKey::from_slice(&Vec::from_hex(&r.given.scan_priv_key).unwrap()).unwrap(),
             spend_key.public_key(secp),
             r.given
@@ -54,22 +54,24 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .zip(scan.addresses(secp))
             .for_each(|(expected, spa)| assert_eq!(&spa.to_string(), expected, "{test}"));
 
+        let mut builder = scan.new_builder();
+
         r.given.outputs.iter().for_each(|o| {
-            scan.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
+            builder.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
         });
 
         r.given.outpoints.iter().for_each(|(txid, vout)| {
-            scan.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
+            builder.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
         });
         r.given.input_pub_keys.iter().for_each(|pk| {
             if pk.len() == 66 {
-                scan.add_public_key(&pk.parse().unwrap());
+                builder.add_public_key(&pk.parse().unwrap());
             } else {
-                scan.add_xonly_public_key(&pk.parse().unwrap());
+                builder.add_xonly_public_key(&pk.parse().unwrap());
             }
         });
 
-        let silent_payment_outputs = scan.xxx();
+        let silent_payment_outputs = builder.matched_outputs();
 
         let calculated_outputs = silent_payment_outputs
             .iter()

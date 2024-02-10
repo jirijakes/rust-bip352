@@ -30,14 +30,73 @@ struct Key {
 //     }
 // }
 
-pub struct ReceiveBuilder<'a> {
+pub struct Receive {
+    keys: Vec<Key>,
+}
+
+impl Receive {
+    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<[u8; 32]>) -> Self {
+        let key = Key {
+            scan_key,
+            spend_key,
+            labels: labels
+                .into_iter()
+                .map(|x| Scalar::from_be_bytes(x).unwrap())
+                .collect(),
+        };
+
+        Self { keys: vec![key] }
+    }
+
+    pub fn addresses<C>(&self, secp: &Secp256k1<C>) -> Vec<SilentPaymentAddress>
+    where
+        C: Signing + Verification,
+    {
+        self.keys
+            .iter()
+            .flat_map(|key| {
+                let scan_key = key.scan_key.public_key(secp);
+
+                let mut addrs = vec![SilentPaymentAddress::new(key.spend_key, scan_key)];
+
+                key.labels.iter().for_each(|l| {
+                    let b_m = key.spend_key.add_exp_tweak(secp, l).unwrap();
+                    addrs.push(SilentPaymentAddress::new(b_m, scan_key))
+                });
+
+                addrs
+            })
+            .collect()
+    }
+
+    pub fn new_scanner(&self) -> Scanner {
+        Scanner {
+            keys: &self.keys,
+            outputs: Default::default(),
+            input_public_key: Default::default(),
+            input_hash: Default::default(),
+        }
+    }
+
+    pub fn scan_transaction(
+        &self,
+        prevouts: &HashMap<OutPoint, TxOut>,
+        tx: &Transaction,
+    ) -> HashSet<SilentPaymentOutput> {
+        let mut builder = self.new_scanner();
+        builder.add_from_transaction(prevouts, tx);
+        builder.scan()
+    }
+}
+
+pub struct Scanner<'a> {
     keys: &'a [Key],
     outputs: Vec<PublicKey>,
     input_public_key: Aggregate<PublicKey>,
     input_hash: InputHash,
 }
 
-impl<'a> ReceiveBuilder<'a> {
+impl<'a> Scanner<'a> {
     pub fn add_output_public_key(&mut self, output: XOnlyPublicKey) -> &mut Self {
         // TODO: Does it have to push PublicKey or would XOnlyPublicKey be enough?
         self.outputs.push(output.public_key(Parity::Even));
@@ -108,7 +167,7 @@ impl<'a> ReceiveBuilder<'a> {
     }
 
     // TODO: return indication which key matched
-    pub fn matched_outputs(self) -> HashSet<SilentPaymentOutput> {
+    pub fn scan(self) -> HashSet<SilentPaymentOutput> {
         let input_hash = self.input_hash.hash().unwrap();
         let input_public_key = self.input_public_key.get().unwrap();
         self.keys
@@ -184,64 +243,5 @@ impl<'a> ReceiveBuilder<'a> {
                 }
             })
             .0
-    }
-}
-
-pub struct Receive {
-    keys: Vec<Key>,
-}
-
-impl Receive {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<[u8; 32]>) -> Self {
-        let key = Key {
-            scan_key,
-            spend_key,
-            labels: labels
-                .into_iter()
-                .map(|x| Scalar::from_be_bytes(x).unwrap())
-                .collect(),
-        };
-
-        Self { keys: vec![key] }
-    }
-
-    pub fn addresses<C>(&self, secp: &Secp256k1<C>) -> Vec<SilentPaymentAddress>
-    where
-        C: Signing + Verification,
-    {
-        self.keys
-            .iter()
-            .flat_map(|key| {
-                let scan_key = key.scan_key.public_key(secp);
-
-                let mut addrs = vec![SilentPaymentAddress::new(key.spend_key, scan_key)];
-
-                key.labels.iter().for_each(|l| {
-                    let b_m = key.spend_key.add_exp_tweak(secp, l).unwrap();
-                    addrs.push(SilentPaymentAddress::new(b_m, scan_key))
-                });
-
-                addrs
-            })
-            .collect()
-    }
-
-    pub fn new_builder(&self) -> ReceiveBuilder {
-        ReceiveBuilder {
-            keys: &self.keys,
-            outputs: Default::default(),
-            input_public_key: Default::default(),
-            input_hash: Default::default(),
-        }
-    }
-
-    pub fn scan_transaction(
-        &self,
-        prevouts: &HashMap<OutPoint, TxOut>,
-        tx: &Transaction,
-    ) -> HashSet<SilentPaymentOutput> {
-        let mut builder = self.new_builder();
-        builder.add_from_transaction(prevouts, tx);
-        builder.matched_outputs()
     }
 }

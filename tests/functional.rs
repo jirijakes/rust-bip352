@@ -154,7 +154,7 @@ fn test_me() {
 
     // Scan
 
-    let scan = Receive::new(scan_key, spend_key.public_key(&secp), vec![]);
+    let receive = Receive::new(scan_key, spend_key.public_key(&secp), vec![]);
 
     let tx = client.get_raw_transaction(&txid, None).unwrap();
     println!("Transaction with silent payment: {}", serialize_hex(&tx));
@@ -163,7 +163,7 @@ fn test_me() {
         (vin.previous_output, prev_tx.output[vin.previous_output.vout as usize].clone())
     }).collect();
 
-    let outputs = scan.scan_transaction(&prevs, &tx);
+    let outputs = receive.scan_transaction(&prevs, &tx);
     let output = outputs.iter().next().unwrap();
 
     // Spend

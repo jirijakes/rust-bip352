@@ -38,7 +38,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
         let spend_key =
             SecretKey::from_slice(&Vec::from_hex(&r.given.spend_priv_key).unwrap()).unwrap();
 
-        let scan = Receive::new(
+        let receive = Receive::new(
             SecretKey::from_slice(&Vec::from_hex(&r.given.scan_priv_key).unwrap()).unwrap(),
             spend_key.public_key(secp),
             r.given
@@ -51,27 +51,27 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
         r.expected
             .addresses
             .iter()
-            .zip(scan.addresses(secp))
+            .zip(receive.addresses(secp))
             .for_each(|(expected, spa)| assert_eq!(&spa.to_string(), expected, "{test}"));
 
-        let mut builder = scan.new_builder();
+        let mut scanner = receive.new_scanner();
 
         r.given.outputs.iter().for_each(|o| {
-            builder.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
+            scanner.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
         });
 
         r.given.outpoints.iter().for_each(|(txid, vout)| {
-            builder.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
+            scanner.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
         });
         r.given.input_pub_keys.iter().for_each(|pk| {
             if pk.len() == 66 {
-                builder.add_public_key(&pk.parse().unwrap());
+                scanner.add_public_key(&pk.parse().unwrap());
             } else {
-                builder.add_xonly_public_key(&pk.parse().unwrap());
+                scanner.add_xonly_public_key(&pk.parse().unwrap());
             }
         });
 
-        let silent_payment_outputs = builder.matched_outputs();
+        let silent_payment_outputs = scanner.scan();
 
         let calculated_outputs = silent_payment_outputs
             .iter()

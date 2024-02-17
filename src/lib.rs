@@ -4,7 +4,7 @@ use bitcoin::consensus::serialize;
 use bitcoin::hashes::{sha256, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
-    Error as SecpError, KeyPair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
+    Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
     Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
@@ -272,10 +272,10 @@ pub fn silent_payment_signing_key<C: Signing>(
     spend_key: SecretKey,
     TweakData { tweak, label }: &TweakData,
     secp: &Secp256k1<C>,
-) -> Result<KeyPair, SecpError> {
+) -> Result<Keypair, SecpError> {
     // d = b_spend + t_k + hash(b_scan || m)
     let d = spend_key.add_tweak(tweak)?.add_tweak(label)?;
-    Ok(KeyPair::from_secret_key(secp, &d))
+    Ok(Keypair::from_secret_key(secp, &d))
 }
 
 /// Attempts to extract public key from an input and the output it points to. Returns

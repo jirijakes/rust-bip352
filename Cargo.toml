@@ -15,12 +15,12 @@ receive = []
 spend = []
 
 [dependencies]
-bitcoin = "0.30"
+bitcoin = { version = "0.31", features = ["serde"] }
+bech32 = { git = "https://github.com/rust-bitcoin/rust-bech32", branch = "master" }
 
 [dev-dependencies]
 bitcoind = "0.33"
 miniscript = "10.0.0"
-indexmap = { version = "2.1", features = ["serde"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
 hex = "0.4"

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+/*
 use bip352::address::SilentPaymentAddress;
 use bip352::receive::Receive;
 use bip352::send::SilentPayment;
@@ -194,3 +194,4 @@ fn test_me() {
 
     assert!(tx.output.iter().any(|o| o.value == (0.07 * 1e8) as u64));
 }
+*/

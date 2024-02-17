@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use bitcoin::bech32::{self, u5, FromBase32, ToBase32, Variant};
+use bitcoin::bech32::{self, Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
 use bitcoin::secp256k1::PublicKey;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -8,6 +8,8 @@ pub struct SilentPaymentAddress {
     spend_key: PublicKey,
     scan_key: PublicKey,
 }
+
+const HRP: Hrp = Hrp::parse_unchecked("sp");
 
 impl SilentPaymentAddress {
     pub fn new(spend_key: PublicKey, scan_key: PublicKey) -> Self {
@@ -18,35 +20,32 @@ impl SilentPaymentAddress {
     }
 
     pub fn from_bech32(s: &str) -> Result<Self, String> {
-        let (_hrp, bytes, _var) = bech32::decode(s).unwrap();
-
-        if let Some((version, data)) = bytes.split_first() {
-            if version.to_u8() == 0 {
-                let bytes = Vec::from_base32(data).unwrap();
-                let (scan_data, spend_data) = bytes.split_at(33);
+        match &bech32::segwit::decode(s) {
+            Ok((hrp, Fe32::Q, data)) if hrp == &HRP => {
+                let (scan_data, spend_data) = data.split_at(33);
                 Ok(SilentPaymentAddress {
                     spend_key: PublicKey::from_slice(spend_data).unwrap(),
                     scan_key: PublicKey::from_slice(scan_data).unwrap(),
                 })
-            } else {
-                Err("".to_string())
             }
-        } else {
-            Err("".to_string())
+            Ok((hrp, v, _)) if hrp == &HRP => Err(format!("Incorrect version {}", v)),
+            Ok((hrp, Fe32::Q, _)) => Err(format!("Incorrect HRP {}", hrp)),
+            Ok((hrp, v, _)) => Err(format!("Incorrect HRP {} and version {}", hrp, v)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     pub fn to_bech32(&self) -> String {
-        let version = u5::try_from_u8(0).expect("no problems");
-        let mut data = vec![version];
-
-        data.append(
-            &mut [self.scan_key.serialize(), self.spend_key.serialize()]
-                .concat()
-                .to_base32(),
-        );
-
-        bech32::encode("sp", data, Variant::Bech32m).unwrap()
+        self.scan_key
+            .serialize()
+            .iter()
+            .chain(self.spend_key.serialize().iter())
+            .copied()
+            .bytes_to_fes()
+            .with_checksum::<Bech32m>(&HRP)
+            .with_witness_version(Fe32::Q)
+            .chars()
+            .collect()
     }
 
     pub fn spend_key(&self) -> PublicKey {

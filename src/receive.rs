@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use bitcoin::hashes::sha256t::Tag;
+use bitcoin::hashes::{sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
@@ -34,15 +36,27 @@ pub struct Receive {
     keys: Vec<Key>,
 }
 
+sha256t_hash_newtype! {
+    pub struct Bip352LabelTag = hash_str("BIP0352/Label");
+    pub struct Bip352LabelHash(_);
+}
+
 impl Receive {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<[u8; 32]>) -> Self {
+    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<u32>) -> Self {
+        // TODO: Move out
+        let labels = labels
+            .into_iter()
+            .map(|m| {
+                let mut engine = Bip352LabelTag::engine();
+                engine.input(&scan_key.secret_bytes());
+                engine.input(&m.to_be_bytes());
+                Scalar::from_be_bytes(Bip352LabelHash::from_engine(engine).to_byte_array()).unwrap()
+            })
+            .collect();
         let key = Key {
             scan_key,
             spend_key,
-            labels: labels
-                .into_iter()
-                .map(|x| Scalar::from_be_bytes(x).unwrap())
-                .collect(),
+            labels,
         };
 
         Self { keys: vec![key] }

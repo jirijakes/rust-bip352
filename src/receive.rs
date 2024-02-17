@@ -1,14 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
 use bitcoin::hashes::sha256t::Tag;
-use bitcoin::hashes::{sha256t_hash_newtype, Hash, HashEngine};
+use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
+use crate::{
+    input_public_key, Aggregate, Bip352LabelHash, Bip352LabelTag, InputHash, SharedSecret,
+    SilentPaymentOutput,
+};
 
 struct Key {
     scan_key: SecretKey,
@@ -34,11 +37,6 @@ struct Key {
 
 pub struct Receive {
     keys: Vec<Key>,
-}
-
-sha256t_hash_newtype! {
-    pub struct Bip352LabelTag = hash_str("BIP0352/Label");
-    pub struct Bip352LabelHash(_);
 }
 
 impl Receive {

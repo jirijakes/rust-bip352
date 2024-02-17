@@ -1,7 +1,8 @@
 //! This library provides functions for working with sending and receiving
 //! Bitcoin Silent Payments according to BIP 352 proposal.
 use bitcoin::consensus::serialize;
-use bitcoin::hashes::{sha256, Hash, HashEngine};
+use bitcoin::hashes::sha256t::Tag;
+use bitcoin::hashes::{sha256, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
     Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
@@ -16,6 +17,13 @@ pub mod receive;
 pub mod send;
 #[cfg(feature = "spend")]
 pub mod spend;
+
+sha256t_hash_newtype! {
+    pub struct Bip352LabelTag = hash_str("BIP0352/Label");
+    pub struct Bip352LabelHash(_);
+    pub struct Bip352InputsTag = hash_str("BIP0352/Inputs");
+    pub struct Bip352InputsHash(_);
+}
 
 /// An output that has been detected as a Silent Payment together with
 /// all data that are needed to spend it. Wallets should index this.
@@ -69,10 +77,6 @@ pub struct InputHash {
     /// Holds the least (so far) outpoint bytes.
     least_outpoint: Option<[u8; 36]>,
 
-    // TODO: Remove when test vector updated.
-    #[deprecated = "specification changed"]
-    outpoints: Vec<[u8; 36]>,
-
     /// Holds aggregated input public key.
     public_key: Aggregate<PublicKey>,
 }
@@ -100,11 +104,6 @@ impl InputHash {
             }
         };
 
-        // TODO: Removev when test vector updated.
-        // keep the outpoints ordered
-        let index = self.outpoints.partition_point(|&p| p < bytes);
-        self.outpoints.insert(index, bytes);
-
         self
     }
 
@@ -115,18 +114,14 @@ impl InputHash {
 
     /// Returns input hash.
     pub fn hash(self) -> Result<Scalar, InputHashError> {
-        let mut engine = sha256::Hash::engine();
+        let mut engine = Bip352InputsTag::engine();
 
-        // TODO: Remove when test vector updated.
-        self.outpoints.iter().for_each(|o| engine.input(o));
+        let outpoint = self.least_outpoint.ok_or(InputHashError::NoOutPoint)?;
+        engine.input(&outpoint);
+        let public_key = self.public_key.get().ok_or(InputHashError::NoPublicKey)?;
+        engine.input(&public_key.serialize());
 
-        // TODO: Uncomment when test vector updated
-        // let outpoint = self.least_outpoint.ok_or(InputHashError::NoOutPoint)?;
-        // engine.input(&outpoint);
-        // let public_key = self.public_key.get().ok_or(InputHashError::NoPublicKey)?;
-        // engine.input(&public_key.serialize());
-
-        let hash = sha256::Hash::from_engine(engine);
+        let hash = Bip352InputsHash::from_engine(engine);
         Scalar::from_be_bytes(hash.to_byte_array()).map_err(|_| InputHashError::InvalidValue)
     }
 }

@@ -134,7 +134,7 @@ impl<'a> Scanner<'a> {
     /// whether it is an output of a Silent Payment. Only taproot outputs are
     /// considered, other output types are ignored.
     pub fn add_output_script_pubkey(&mut self, spk: &Script) -> &mut Self {
-        if spk.is_v1_p2tr() {
+        if spk.is_p2tr() {
             self.add_output_public_key(
                 spk.as_bytes()
                     .get(2..)

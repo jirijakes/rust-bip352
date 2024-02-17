@@ -238,7 +238,7 @@ impl SharedSecret {
     ) -> ScriptBuf {
         let (p_k, _) = self.destination_public_key(spend_key, k, secp);
 
-        ScriptBuf::new_v1_p2tr_tweaked(XOnlyPublicKey::from(p_k).dangerous_assume_tweaked())
+        ScriptBuf::new_p2tr_tweaked(XOnlyPublicKey::from(p_k).dangerous_assume_tweaked())
     }
 
     pub fn destination_public_key<C: Verification>(
@@ -282,12 +282,12 @@ pub fn input_public_key(prevout: &Script, input: &TxIn) -> Option<PublicKey> {
         let ss = input.script_sig.as_bytes();
         ss.get(ss.len() - 33..)
             .and_then(|b| PublicKey::from_slice(b).ok())
-    } else if prevout.is_v0_p2wpkh() {
+    } else if prevout.is_p2wpkh() {
         input
             .witness
             .nth(1)
             .and_then(|b| PublicKey::from_slice(b).ok())
-    } else if prevout.is_v1_p2tr() {
+    } else if prevout.is_p2tr() {
         prevout
             .as_bytes()
             .get(2..)

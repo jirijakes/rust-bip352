@@ -30,6 +30,14 @@ diff path="":
     fossil diff {{path}}
 
 # Run tests
+ntest name="":
+    cargo nextest run {{name}} --no-capture
+
+# Continuously run tests
+ntest-- name="":
+    watchexec -e rs -- just ntest {{name}}
+
+# Run tests
 test name="":
     cargo test {{name}} -- --nocapture
 

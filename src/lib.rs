@@ -2,7 +2,7 @@
 //! Bitcoin Silent Payments according to BIP 352 proposal.
 use bitcoin::consensus::serialize;
 use bitcoin::hashes::sha256t::Tag;
-use bitcoin::hashes::{sha256, sha256t_hash_newtype, Hash, HashEngine};
+use bitcoin::hashes::{sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
     Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
@@ -19,10 +19,14 @@ pub mod send;
 pub mod spend;
 
 sha256t_hash_newtype! {
-    pub struct Bip352LabelTag = hash_str("BIP0352/Label");
-    pub struct Bip352LabelHash(_);
-    pub struct Bip352InputsTag = hash_str("BIP0352/Inputs");
-    pub struct Bip352InputsHash(_);
+    pub struct LabelTag = hash_str("BIP0352/Label");
+    pub struct LabelHash(_);
+
+    pub struct InputsTag = hash_str("BIP0352/Inputs");
+    pub struct InputsHash(_);
+
+    pub struct SharedSecretTag = hash_str("BIP0352/SharedSecret");
+    pub struct SharedSecretHash(_);
 }
 
 /// An output that has been detected as a Silent Payment together with
@@ -114,14 +118,14 @@ impl InputHash {
 
     /// Returns input hash.
     pub fn hash(self) -> Result<Scalar, InputHashError> {
-        let mut engine = Bip352InputsTag::engine();
+        let mut engine = InputsTag::engine();
 
         let outpoint = self.least_outpoint.ok_or(InputHashError::NoOutPoint)?;
         engine.input(&outpoint);
         let public_key = self.public_key.get().ok_or(InputHashError::NoPublicKey)?;
         engine.input(&public_key.serialize());
 
-        let hash = Bip352InputsHash::from_engine(engine);
+        let hash = InputsHash::from_engine(engine);
         Scalar::from_be_bytes(hash.to_byte_array()).map_err(|_| InputHashError::InvalidValue)
     }
 }
@@ -247,11 +251,12 @@ impl SharedSecret {
         k: u32,
         secp: &Secp256k1<C>,
     ) -> (PublicKey, Scalar) {
-        let mut engine = sha256::Hash::engine();
+        let mut engine = SharedSecretTag::engine();
         engine.input(&self.0);
         engine.input(&k.to_be_bytes());
 
-        let t_k = Scalar::from_be_bytes(sha256::Hash::from_engine(engine).to_byte_array()).unwrap();
+        let t_k =
+            Scalar::from_be_bytes(SharedSecretHash::from_engine(engine).to_byte_array()).unwrap();
         let p_k = spend_key.add_exp_tweak(secp, &t_k).unwrap();
 
         if p_k.x_only_public_key().1 == Parity::Odd {

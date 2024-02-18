@@ -11,6 +11,11 @@ use std::str::FromStr;
 #[test]
 #[cfg(any(feature = "receive", feature = "send", feature = "spend"))]
 fn bip352_test_vector() {
+    use bitcoin::{
+        consensus::{deserialize, Decodable},
+        Witness,
+    };
+
     let f = File::open("tests/data/send_and_receive_test_vectors.json").unwrap();
     let reader = BufReader::new(f);
 
@@ -22,10 +27,11 @@ fn bip352_test_vector() {
         // .take(1)
         .for_each(|t| {
             // println!("{t:?}");
-            // #[cfg(feature = "send")]
-            // test_sending(&t.sending, &t.comment, &secp);
-            #[cfg(feature = "receive")]
-            test_receiving(&t.receiving, &t.comment, &secp);
+
+            #[cfg(feature = "send")]
+            test_sending(&t.sending, &t.comment, &secp);
+            // #[cfg(feature = "receive")]
+            // test_receiving(&t.receiving, &t.comment, &secp);
         });
 }
 
@@ -55,15 +61,17 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .collect();
         assert_eq!(given_addresses, expected_addresses, "{test}");
 
-        // let mut scanner = receive.new_scanner();
+        let mut scanner = receive.new_scanner();
 
-        // r.given.outputs.iter().for_each(|o| {
-        //     scanner.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
-        // });
+        r.given.outputs.iter().for_each(|o| {
+            scanner.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
+        });
 
-        // r.given.outpoints.iter().for_each(|(txid, vout)| {
-        //     scanner.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
-        // });
+        r.given.vin.iter().for_each(|vin| {
+            scanner
+                .add_outpoint(&OutPoint::new(vin.txid, vin.vout))
+                .add_output_script_pubkey(&vin.prevout.script_pub_key.hex);
+        });
         // r.given.input_pub_keys.iter().for_each(|pk| {
         //     if pk.len() == 66 {
         //         scanner.add_public_key(&pk.parse().unwrap());
@@ -72,31 +80,30 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
         //     }
         // });
 
-        // let silent_payment_outputs = scanner.scan();
+        let silent_payment_outputs = scanner.scan();
 
-        // let calculated_outputs = silent_payment_outputs
-        //     .iter()
-        //     .map(|o| o.public_key())
-        //     .collect::<HashSet<_>>();
+        let calculated_outputs = silent_payment_outputs
+            .iter()
+            .map(|o| o.public_key())
+            .collect::<HashSet<_>>();
 
-        // let expected_outputs = r
-        //     .expected
-        //     .outputs
-        //     .iter()
-        //     .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
-        //     .collect();
+        let expected_outputs = r
+            .expected
+            .outputs
+            .iter()
+            .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
+            .collect();
 
-        // assert_eq!(
-        //     calculated_outputs, expected_outputs,
-        //     "Found different outputs than expected in `{test}`."
-        // );
+        assert_eq!(
+            calculated_outputs, expected_outputs,
+            "Found different outputs than expected in `{test}`."
+        );
 
         // #[cfg(feature = "spend")]
         // test_spending(r, &silent_payment_outputs, test, secp);
     });
 }
 
-/*
 #[cfg(feature = "send")]
 fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
     use bip352::send::SilentPayment;
@@ -108,12 +115,14 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
         });
         s.given.vin.iter().for_each(|vin| {
             payment.add_outpoint(OutPoint::new(vin.txid, vin.vout));
-            let key = SecretKey::from_slice(&Vec::from_hex(&vin.private_key.clone().unwrap()).unwrap()).unwrap();
-            // if *is_taproot {
+            let key =
+                SecretKey::from_slice(&Vec::from_hex(&vin.private_key.clone().unwrap()).unwrap())
+                    .unwrap();
+            if vin.prevout.script_pub_key.hex.is_p2tr() {
                 payment.add_taproot_private_key(key);
-            // } else {
-                // payment.add_private_key(key);
-            // }
+            } else {
+                payment.add_private_key(key);
+            }
         });
 
         payment
@@ -121,7 +130,7 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
             .into_iter()
             .zip(s.expected.outputs.iter())
             .for_each(|(given_script, (expected_key, _))| {
-                let expected_script = ScriptBuf::new_v1_p2tr_tweaked(
+                let expected_script = ScriptBuf::new_p2tr_tweaked(
                     XOnlyPublicKey::from_str(expected_key)
                         .unwrap()
                         .dangerous_assume_tweaked(),
@@ -130,7 +139,7 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
             });
     })
 }
-*/
+
 /*
 #[cfg(feature = "spend")]
 fn test_spending(

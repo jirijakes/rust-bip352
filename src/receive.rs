@@ -9,7 +9,7 @@ use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
 use crate::{
-    input_public_key, Aggregate, Bip352LabelHash, Bip352LabelTag, InputHash, SharedSecret,
+    input_public_key, Aggregate, LabelHash, LabelTag, InputHash, SharedSecret,
     SilentPaymentOutput,
 };
 
@@ -45,10 +45,10 @@ impl Receive {
         let labels = labels
             .into_iter()
             .map(|m| {
-                let mut engine = Bip352LabelTag::engine();
+                let mut engine = LabelTag::engine();
                 engine.input(&scan_key.secret_bytes());
                 engine.input(&m.to_be_bytes());
-                Scalar::from_be_bytes(Bip352LabelHash::from_engine(engine).to_byte_array()).unwrap()
+                Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
             })
             .collect();
         let key = Key {

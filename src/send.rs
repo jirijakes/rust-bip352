@@ -87,9 +87,6 @@ impl<'a> SilentPayment<'a> {
         } else {
             key
         };
-        self.input_hash
-            .add_input_public_key(&checked_key.public_key(self.secp))
-            .unwrap();
 
         self.add_private_key(checked_key)
     }

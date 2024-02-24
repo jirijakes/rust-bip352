@@ -24,6 +24,7 @@ fn bip352_test_vector() {
     serde_json::from_reader::<_, Vec<Test>>(reader)
         .unwrap()
         .iter()
+        // .filter(|t| t.comment == "Single recipient: taproot only inputs with even y-values")
         // .take(1)
         .for_each(|t| {
             // println!("{t:?}");

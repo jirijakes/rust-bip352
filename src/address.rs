@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use ::bech32::primitives::decode::{CheckedHrpstring, UncheckedHrpstring};
-use ::bech32::{self, Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
+use ::bech32::primitives::decode::UncheckedHrpstring;
+use ::bech32::{Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
 use bitcoin::secp256k1::PublicKey;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

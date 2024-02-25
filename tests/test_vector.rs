@@ -1,10 +1,10 @@
 use bitcoin::absolute::LockTime;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::{sha256, Hash};
-use bitcoin::key::TapTweak;
+use bitcoin::key::{TapTweak, TweakedPublicKey};
 use bitcoin::secp256k1::{All, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 use bitcoin::transaction::Version;
-use bitcoin::{OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid, Witness};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
@@ -34,7 +34,6 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
     use bip352::receive::Receive;
-    use bitcoin::secp256k1::{Parity, PublicKey};
 
     receiving.iter().for_each(|r| {
         let spend_key =
@@ -56,50 +55,22 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .collect();
         assert_eq!(given_addresses, expected_addresses, "{test}");
 
-        let mut scanner = receive.new_scanner();
+        let prevouts = r
+            .given
+            .vin
+            .iter()
+            .map(|vin| {
+                (
+                    vin.out_point(),
+                    TxOut {
+                        value: Amount::from_sat(123),
+                        script_pubkey: vin.prevout.script_pub_key.hex.clone(),
+                    },
+                )
+            })
+            .collect();
 
-        r.given.outputs.iter().for_each(|o| {
-            scanner.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
-        });
-
-        r.given.vin.iter().for_each(|vin| {
-            let txin = vin.to_txin();
-            scanner
-                .add_outpoint(&txin.previous_output)
-                .add_output_script_pubkey(&vin.prevout.script_pub_key.hex);
-
-            let x = if vin.prevout.script_pub_key.hex.is_p2pkh() {
-                let ss = vin.script_sig.as_bytes();
-                ss.get(ss.len() - 33..)
-                    .and_then(|b| PublicKey::from_slice(b).ok())
-            } else if vin.prevout.script_pub_key.hex.is_p2wpkh() {
-                txin.witness
-                    .nth(1)
-                    .and_then(|b| PublicKey::from_slice(b).ok())
-            } else if vin.prevout.script_pub_key.hex.is_p2tr() {
-                vin.prevout
-                    .script_pub_key
-                    .hex
-                    .as_bytes()
-                    .get(2..)
-                    .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
-                    .map(|k| k.public_key(Parity::Even))
-            } else if vin.prevout.script_pub_key.hex.is_p2sh()
-                && matches!(vin.script_sig.as_bytes(), [0x16, 0x0, 0x14, x@..] if x.len() == 20)
-            {
-                txin.witness
-                    .last()
-                    .and_then(|b| PublicKey::from_slice(b).ok())
-            } else {
-                None
-            };
-
-            if let Some(x) = x {
-                scanner.add_public_key(&x);
-            }
-        });
-
-        let silent_payment_outputs = scanner.scan();
+        let silent_payment_outputs = receive.scan_transaction(&prevouts, &r.given.to_tx());
 
         let calculated_outputs = silent_payment_outputs
             .iter()
@@ -223,10 +194,14 @@ struct Vin {
 }
 
 impl Vin {
+    fn out_point(&self) -> OutPoint {
+        OutPoint::new(self.txid, self.vout)
+    }
+
     fn to_txin(&self) -> TxIn {
         let w = hex::decode(&self.txinwitness).unwrap();
         TxIn {
-            previous_output: OutPoint::new(self.txid, self.vout),
+            previous_output: self.out_point(),
             script_sig: self.script_sig.clone(),
             sequence: Sequence::MAX,
             witness: Witness::from_slice(&[&w, &w]),
@@ -238,19 +213,6 @@ impl Vin {
 struct SendingGiven {
     vin: Vec<Vin>,
     recipients: Vec<(String, f64)>,
-}
-
-impl SendingGiven {
-    fn to_tx(&self) -> Transaction {
-        let input = self.vin.iter().map(|vin| vin.to_txin()).collect();
-        let output = todo!();
-        Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::ZERO,
-            input,
-            output,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -277,11 +239,33 @@ struct ReceivingGiven {
     key_material: KeyMaterial,
     labels: Vec<u32>,
 }
+impl ReceivingGiven {
+    fn to_tx(&self) -> Transaction {
+        let input = self.vin.iter().map(|vin| vin.to_txin()).collect();
+        let output = self
+            .outputs
+            .iter()
+            .map(|out| TxOut {
+                value: Amount::from_sat(123),
+                script_pubkey: ScriptBuf::new_p2tr_tweaked(
+                    TweakedPublicKey::dangerous_assume_tweaked(
+                        XOnlyPublicKey::from_str(out).unwrap(),
+                    ),
+                ),
+            })
+            .collect();
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input,
+            output,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct ReceivingOutput {
     pub_key: String,
-    priv_key_tweak: String,
     signature: String,
 }
 

@@ -9,8 +9,7 @@ use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
 use crate::{
-    input_public_key, Aggregate, LabelHash, LabelTag, InputHash, SharedSecret,
-    SilentPaymentOutput,
+    input_public_key, Aggregate, InputHash, LabelHash, LabelTag, SharedSecret, SilentPaymentOutput,
 };
 
 struct Key {

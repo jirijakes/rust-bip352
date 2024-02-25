@@ -1,12 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
+use bitcoin::hashes::sha256t::Tag;
+use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
+use crate::{
+    input_public_key, Aggregate, InputHash, LabelHash, LabelTag, SharedSecret, SilentPaymentOutput,
+};
 
 struct Key {
     scan_key: SecretKey,
@@ -35,14 +39,21 @@ pub struct Receive {
 }
 
 impl Receive {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<[u8; 32]>) -> Self {
+    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<u32>) -> Self {
+        // TODO: Move out
+        let labels = labels
+            .into_iter()
+            .map(|m| {
+                let mut engine = LabelTag::engine();
+                engine.input(&scan_key.secret_bytes());
+                engine.input(&m.to_be_bytes());
+                Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
+            })
+            .collect();
         let key = Key {
             scan_key,
             spend_key,
-            labels: labels
-                .into_iter()
-                .map(|x| Scalar::from_be_bytes(x).unwrap())
-                .collect(),
+            labels,
         };
 
         Self { keys: vec![key] }
@@ -122,7 +133,7 @@ impl<'a> Scanner<'a> {
     /// whether it is an output of a Silent Payment. Only taproot outputs are
     /// considered, other output types are ignored.
     pub fn add_output_script_pubkey(&mut self, spk: &Script) -> &mut Self {
-        if spk.is_v1_p2tr() {
+        if spk.is_p2tr() {
             self.add_output_public_key(
                 spk.as_bytes()
                     .get(2..)

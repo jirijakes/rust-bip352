@@ -1,9 +1,10 @@
+use bitcoin::absolute::LockTime;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::{sha256, Hash};
-use bitcoin::key::TapTweak;
+use bitcoin::key::{TapTweak, TweakedPublicKey};
 use bitcoin::secp256k1::{All, Message, Secp256k1, SecretKey, XOnlyPublicKey};
-use bitcoin::{OutPoint, ScriptBuf, Txid};
-use indexmap::IndexMap;
+use bitcoin::transaction::Version;
+use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
@@ -36,42 +37,40 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
 
     receiving.iter().for_each(|r| {
         let spend_key =
-            SecretKey::from_slice(&Vec::from_hex(&r.given.spend_priv_key).unwrap()).unwrap();
+            SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.spend_priv_key).unwrap())
+                .unwrap();
 
         let receive = Receive::new(
-            SecretKey::from_slice(&Vec::from_hex(&r.given.scan_priv_key).unwrap()).unwrap(),
+            SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.scan_priv_key).unwrap())
+                .unwrap(),
             spend_key.public_key(secp),
-            r.given
-                .labels
-                .values()
-                .map(|s| Vec::from_hex(s).unwrap().try_into().unwrap())
-                .collect(),
+            r.given.labels.clone(),
         );
 
-        r.expected
-            .addresses
+        let expected_addresses: HashSet<String> = r.expected.addresses.iter().cloned().collect();
+        let given_addresses: HashSet<String> = receive
+            .addresses(secp)
             .iter()
-            .zip(receive.addresses(secp))
-            .for_each(|(expected, spa)| assert_eq!(&spa.to_string(), expected, "{test}"));
+            .map(|spa| spa.to_string())
+            .collect();
+        assert_eq!(given_addresses, expected_addresses, "{test}");
 
-        let mut scanner = receive.new_scanner();
+        let prevouts = r
+            .given
+            .vin
+            .iter()
+            .map(|vin| {
+                (
+                    vin.out_point(),
+                    TxOut {
+                        value: Amount::from_sat(123),
+                        script_pubkey: vin.prevout.script_pub_key.hex.clone(),
+                    },
+                )
+            })
+            .collect();
 
-        r.given.outputs.iter().for_each(|o| {
-            scanner.add_output_public_key(XOnlyPublicKey::from_str(o).unwrap());
-        });
-
-        r.given.outpoints.iter().for_each(|(txid, vout)| {
-            scanner.add_outpoint(&OutPoint::new(Txid::from_str(txid).unwrap(), *vout));
-        });
-        r.given.input_pub_keys.iter().for_each(|pk| {
-            if pk.len() == 66 {
-                scanner.add_public_key(&pk.parse().unwrap());
-            } else {
-                scanner.add_xonly_public_key(&pk.parse().unwrap());
-            }
-        });
-
-        let silent_payment_outputs = scanner.scan();
+        let silent_payment_outputs = receive.scan_transaction(&prevouts, &r.given.to_tx());
 
         let calculated_outputs = silent_payment_outputs
             .iter()
@@ -104,27 +103,24 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
         s.given.recipients.iter().for_each(|(addr, _amount)| {
             payment.add_recipient(addr.parse().unwrap());
         });
-        s.given.outpoints.iter().for_each(|(txid, vout)| {
-            payment.add_outpoint(OutPoint::new(txid.parse().unwrap(), *vout));
+        s.given.vin.iter().for_each(|vin| {
+            payment.add_outpoint(vin.to_txin().previous_output);
+            let key =
+                SecretKey::from_slice(&Vec::from_hex(&vin.private_key.clone().unwrap()).unwrap())
+                    .unwrap();
+            if vin.prevout.script_pub_key.hex.is_p2tr() {
+                payment.add_taproot_private_key(key);
+            } else {
+                payment.add_private_key(key);
+            }
         });
-        s.given
-            .input_priv_keys
-            .iter()
-            .for_each(|(key, is_taproot)| {
-                let key = SecretKey::from_slice(&Vec::from_hex(key).unwrap()).unwrap();
-                if *is_taproot {
-                    payment.add_taproot_private_key(key);
-                } else {
-                    payment.add_private_key(key);
-                }
-            });
 
         payment
             .generate_output_scripts()
             .into_iter()
             .zip(s.expected.outputs.iter())
             .for_each(|(given_script, (expected_key, _))| {
-                let expected_script = ScriptBuf::new_v1_p2tr_tweaked(
+                let expected_script = ScriptBuf::new_p2tr_tweaked(
                     XOnlyPublicKey::from_str(expected_key)
                         .unwrap()
                         .dangerous_assume_tweaked(),
@@ -143,8 +139,10 @@ fn test_spending(
 ) {
     use bip352::spend;
 
-    let spend_key =
-        SecretKey::from_slice(&Vec::from_hex(&receiving.given.spend_priv_key).unwrap()).unwrap();
+    let spend_key = SecretKey::from_slice(
+        &Vec::from_hex(&receiving.given.key_material.spend_priv_key).unwrap(),
+    )
+    .unwrap();
 
     receiving.expected.outputs.iter().for_each(|o| {
         let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
@@ -155,10 +153,9 @@ fn test_spending(
         {
             let keypair = spend::signing_keypair(spend_key, spo.tweak(), spo.label());
 
-            let msg = Message::from_slice(
-                sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),
-            )
-            .unwrap();
+            let msg = Message::from_digest(
+                sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),
+            );
             let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
                 .to_byte_array();
 
@@ -175,9 +172,46 @@ fn test_spending(
 }
 
 #[derive(Debug, Deserialize)]
+struct ScriptPubKey {
+    hex: ScriptBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct Prevout {
+    #[serde(rename = "scriptPubKey")]
+    script_pub_key: ScriptPubKey,
+}
+
+#[derive(Debug, Deserialize)]
+struct Vin {
+    txid: Txid,
+    vout: u32,
+    #[serde(rename = "scriptSig")]
+    script_sig: ScriptBuf,
+    txinwitness: String,
+    prevout: Prevout,
+    private_key: Option<String>,
+}
+
+impl Vin {
+    fn out_point(&self) -> OutPoint {
+        OutPoint::new(self.txid, self.vout)
+    }
+
+    fn to_txin(&self) -> TxIn {
+        let w = hex::decode(&self.txinwitness).unwrap();
+        TxIn {
+            previous_output: self.out_point(),
+            script_sig: self.script_sig.clone(),
+            sequence: Sequence::MAX,
+            witness: Witness::from_slice(&[&w, &w]),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct SendingGiven {
-    outpoints: Vec<(String, u32)>,
-    input_priv_keys: Vec<(String, bool)>,
+    vin: Vec<Vin>,
     recipients: Vec<(String, f64)>,
 }
 
@@ -193,20 +227,45 @@ struct Sending {
 }
 
 #[derive(Debug, Deserialize)]
-struct ReceivingGiven {
-    outpoints: Vec<(String, u32)>,
-    input_pub_keys: Vec<String>,
-    bip32_seed: String,
+struct KeyMaterial {
     scan_priv_key: String,
     spend_priv_key: String,
-    labels: IndexMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReceivingGiven {
+    vin: Vec<Vin>,
     outputs: Vec<String>,
+    key_material: KeyMaterial,
+    labels: Vec<u32>,
+}
+impl ReceivingGiven {
+    fn to_tx(&self) -> Transaction {
+        let input = self.vin.iter().map(|vin| vin.to_txin()).collect();
+        let output = self
+            .outputs
+            .iter()
+            .map(|out| TxOut {
+                value: Amount::from_sat(123),
+                script_pubkey: ScriptBuf::new_p2tr_tweaked(
+                    TweakedPublicKey::dangerous_assume_tweaked(
+                        XOnlyPublicKey::from_str(out).unwrap(),
+                    ),
+                ),
+            })
+            .collect();
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input,
+            output,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct ReceivingOutput {
     pub_key: String,
-    priv_key_tweak: String,
     signature: String,
 }
 
@@ -218,7 +277,6 @@ struct ReceivingExpected {
 
 #[derive(Debug, Deserialize)]
 struct Receiving {
-    supports_labels: bool,
     given: ReceivingGiven,
     expected: ReceivingExpected,
 }

@@ -1,8 +1,10 @@
+use bitcoin::absolute::LockTime;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{All, Message, Secp256k1, SecretKey, XOnlyPublicKey};
-use bitcoin::{OutPoint, ScriptBuf, Txid};
+use bitcoin::transaction::Version;
+use bitcoin::{OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid, Witness};
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
@@ -11,11 +13,6 @@ use std::str::FromStr;
 #[test]
 #[cfg(any(feature = "receive", feature = "send", feature = "spend"))]
 fn bip352_test_vector() {
-    use bitcoin::{
-        consensus::{deserialize, Decodable},
-        Witness,
-    };
-
     let f = File::open("tests/data/send_and_receive_test_vectors.json").unwrap();
     let reader = BufReader::new(f);
 
@@ -24,15 +21,11 @@ fn bip352_test_vector() {
     serde_json::from_reader::<_, Vec<Test>>(reader)
         .unwrap()
         .iter()
-        // .filter(|t| t.comment == "Single recipient: taproot only inputs with even y-values")
-        // .take(1)
         .for_each(|t| {
-            // println!("{t:?}");
-
             #[cfg(feature = "send")]
             test_sending(&t.sending, &t.comment, &secp);
-            // #[cfg(feature = "receive")]
-            // test_receiving(&t.receiving, &t.comment, &secp);
+            #[cfg(feature = "receive")]
+            test_receiving(&t.receiving, &t.comment, &secp);
         });
 }
 
@@ -41,6 +34,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
     use bip352::receive::Receive;
+    use bitcoin::secp256k1::{Parity, PublicKey};
 
     receiving.iter().for_each(|r| {
         let spend_key =
@@ -69,17 +63,41 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
         });
 
         r.given.vin.iter().for_each(|vin| {
+            let txin = vin.to_txin();
             scanner
-                .add_outpoint(&OutPoint::new(vin.txid, vin.vout))
+                .add_outpoint(&txin.previous_output)
                 .add_output_script_pubkey(&vin.prevout.script_pub_key.hex);
+
+            let x = if vin.prevout.script_pub_key.hex.is_p2pkh() {
+                let ss = vin.script_sig.as_bytes();
+                ss.get(ss.len() - 33..)
+                    .and_then(|b| PublicKey::from_slice(b).ok())
+            } else if vin.prevout.script_pub_key.hex.is_p2wpkh() {
+                txin.witness
+                    .nth(1)
+                    .and_then(|b| PublicKey::from_slice(b).ok())
+            } else if vin.prevout.script_pub_key.hex.is_p2tr() {
+                vin.prevout
+                    .script_pub_key
+                    .hex
+                    .as_bytes()
+                    .get(2..)
+                    .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
+                    .map(|k| k.public_key(Parity::Even))
+            } else if vin.prevout.script_pub_key.hex.is_p2sh()
+                && matches!(vin.script_sig.as_bytes(), [0x16, 0x0, 0x14, x@..] if x.len() == 20)
+            {
+                txin.witness
+                    .last()
+                    .and_then(|b| PublicKey::from_slice(b).ok())
+            } else {
+                None
+            };
+
+            if let Some(x) = x {
+                scanner.add_public_key(&x);
+            }
         });
-        // r.given.input_pub_keys.iter().for_each(|pk| {
-        //     if pk.len() == 66 {
-        //         scanner.add_public_key(&pk.parse().unwrap());
-        //     } else {
-        //         scanner.add_xonly_public_key(&pk.parse().unwrap());
-        //     }
-        // });
 
         let silent_payment_outputs = scanner.scan();
 
@@ -100,8 +118,8 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             "Found different outputs than expected in `{test}`."
         );
 
-        // #[cfg(feature = "spend")]
-        // test_spending(r, &silent_payment_outputs, test, secp);
+        #[cfg(feature = "spend")]
+        test_spending(r, &silent_payment_outputs, test, secp);
     });
 }
 
@@ -115,7 +133,7 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
             payment.add_recipient(addr.parse().unwrap());
         });
         s.given.vin.iter().for_each(|vin| {
-            payment.add_outpoint(OutPoint::new(vin.txid, vin.vout));
+            payment.add_outpoint(vin.to_txin().previous_output);
             let key =
                 SecretKey::from_slice(&Vec::from_hex(&vin.private_key.clone().unwrap()).unwrap())
                     .unwrap();
@@ -141,7 +159,6 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
     })
 }
 
-/*
 #[cfg(feature = "spend")]
 fn test_spending(
     receiving: &Receiving,
@@ -151,8 +168,10 @@ fn test_spending(
 ) {
     use bip352::spend;
 
-    let spend_key =
-        SecretKey::from_slice(&Vec::from_hex(&receiving.given.spend_priv_key).unwrap()).unwrap();
+    let spend_key = SecretKey::from_slice(
+        &Vec::from_hex(&receiving.given.key_material.spend_priv_key).unwrap(),
+    )
+    .unwrap();
 
     receiving.expected.outputs.iter().for_each(|o| {
         let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
@@ -163,10 +182,9 @@ fn test_spending(
         {
             let keypair = spend::signing_keypair(spend_key, spo.tweak(), spo.label());
 
-            let msg = Message::from_slice(
-                sha256::Hash::hash(&"message".to_string().into_bytes()).as_byte_array(),
-            )
-            .unwrap();
+            let msg = Message::from_digest(
+                sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),
+            );
             let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
                 .to_byte_array();
 
@@ -181,7 +199,7 @@ fn test_spending(
         }
     });
 }
-*/
+
 #[derive(Debug, Deserialize)]
 struct ScriptPubKey {
     hex: ScriptBuf,
@@ -204,10 +222,35 @@ struct Vin {
     private_key: Option<String>,
 }
 
+impl Vin {
+    fn to_txin(&self) -> TxIn {
+        let w = hex::decode(&self.txinwitness).unwrap();
+        TxIn {
+            previous_output: OutPoint::new(self.txid, self.vout),
+            script_sig: self.script_sig.clone(),
+            sequence: Sequence::MAX,
+            witness: Witness::from_slice(&[&w, &w]),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct SendingGiven {
     vin: Vec<Vin>,
     recipients: Vec<(String, f64)>,
+}
+
+impl SendingGiven {
+    fn to_tx(&self) -> Transaction {
+        let input = self.vin.iter().map(|vin| vin.to_txin()).collect();
+        let output = todo!();
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input,
+            output,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

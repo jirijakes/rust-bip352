@@ -275,7 +275,6 @@ pub fn silent_payment_signing_key<C: Signing>(
 ) -> Result<Keypair, SecpError> {
     // d = b_spend + t_k + hash(b_scan || m)
     let d = spend_key.add_tweak(tweak)?.add_tweak(label)?;
-    println!("{:02x?}", d.secret_bytes());
     Ok(Keypair::from_secret_key(secp, &d))
 }
 

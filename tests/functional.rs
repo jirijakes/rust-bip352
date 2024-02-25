@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-/*
+/*use std::collections::HashMap;
+
 use bip352::address::SilentPaymentAddress;
 use bip352::receive::Receive;
 use bip352::send::SilentPayment;

@@ -16,6 +16,7 @@ struct Key {
     scan_key: SecretKey,
     spend_key: PublicKey,
     labels: Vec<Scalar>,
+    change_label: Scalar,
 }
 
 // impl Keys {
@@ -50,10 +51,17 @@ impl Receive {
                 Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
             })
             .collect();
+        let change_label = {
+            let mut engine = LabelTag::engine();
+            engine.input(&scan_key.secret_bytes());
+            engine.input(&0u32.to_be_bytes());
+            Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
+        };
         let key = Key {
             scan_key,
             spend_key,
             labels,
+            change_label,
         };
 
         Self { keys: vec![key] }
@@ -179,20 +187,23 @@ impl<'a> Scanner<'a> {
 
     // TODO: return indication which key matched
     pub fn scan(self) -> HashSet<SilentPaymentOutput> {
-        let input_hash = self.input_hash.hash().unwrap();
-        let input_public_key = self.input_public_key.get().unwrap();
-        self.keys
-            .iter()
-            .flat_map(|key| {
-                Self::matched_outputs_per_key(
-                    input_hash,
-                    input_public_key,
-                    &self.outputs,
-                    key,
-                    &Secp256k1::new(),
-                )
-            })
-            .collect()
+        if let Ok(input_hash) = self.input_hash.hash() {
+            let input_public_key = self.input_public_key.get().unwrap();
+            self.keys
+                .iter()
+                .flat_map(|key| {
+                    Self::matched_outputs_per_key(
+                        input_hash,
+                        input_public_key,
+                        &self.outputs,
+                        key,
+                        &Secp256k1::new(),
+                    )
+                })
+                .collect()
+        } else {
+            HashSet::default()
+        }
     }
 
     fn matched_outputs_per_key(
@@ -206,12 +217,13 @@ impl<'a> Scanner<'a> {
             scan_key,
             spend_key,
             labels,
+            change_label,
         } = key;
 
         let shared_secret = SharedSecret::new(input_hash, input_public_key, *scan_key, secp);
 
-        let labels = labels
-            .iter()
+        let labels = std::iter::once(change_label)
+            .chain(labels.iter())
             .flat_map(|&label| {
                 let label_public_key = SecretKey::from_slice(&label.to_be_bytes())
                     .unwrap()

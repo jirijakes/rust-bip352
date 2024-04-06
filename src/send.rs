@@ -129,34 +129,38 @@ impl<'a> SilentPayment<'a> {
 
     #[must_use]
     pub fn generate_output_scripts(self) -> Vec<ScriptBuf> {
-        let input_hash = self.input_hash.hash().unwrap();
-        let input_secret_key = self.input_secret_key.get().unwrap();
+        if let Ok(input_hash) = self.input_hash.hash() {
+            let input_secret_key = self.input_secret_key.get().unwrap();
 
-        // scan_key -> spend_keys
-        let mut groups: HashMap<PublicKey, Vec<(usize, PublicKey)>> = HashMap::new();
+            // scan_key -> spend_keys
+            let mut groups: HashMap<PublicKey, Vec<(usize, PublicKey)>> = HashMap::new();
 
-        // Enumerate to preserve order.
-        self.recipients.iter().enumerate().for_each(|(index, r)| {
-            groups
-                .entry(r.scan_key())
-                .or_default()
-                .push((index, r.spend_key()));
-        });
+            // Enumerate to preserve order.
+            self.recipients.iter().enumerate().for_each(|(index, r)| {
+                groups
+                    .entry(r.scan_key())
+                    .or_default()
+                    .push((index, r.spend_key()));
+            });
 
-        let mut x: Vec<(usize, ScriptBuf)> = groups
-            .into_iter()
-            .flat_map(|(b_scan, b_ms)| {
-                let shared_secret =
-                    SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp);
+            // TODO: Is ordering needed?
+            let mut x: Vec<(usize, ScriptBuf)> = groups
+                .into_iter()
+                .flat_map(|(b_scan, b_ms)| {
+                    let shared_secret =
+                        SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp);
 
-                b_ms.into_iter().zip(0..).map(move |((index, b_m), k)| {
-                    (index, shared_secret.destination_output(b_m, k, self.secp))
+                    b_ms.into_iter().zip(0..).map(move |((index, b_m), k)| {
+                        (index, shared_secret.destination_output(b_m, k, self.secp))
+                    })
                 })
-            })
-            .collect();
+                .collect();
 
-        x.sort_by_key(|(index, _)| *index);
+            x.sort_by_key(|(index, _)| *index);
 
-        x.into_iter().map(|(_, script)| script).collect()
+            x.into_iter().map(|(_, script)| script).collect()
+        } else {
+            vec![]
+        }
     }
 }

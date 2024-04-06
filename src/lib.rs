@@ -2,7 +2,7 @@
 //! Bitcoin Silent Payments according to BIP 352 proposal.
 use bitcoin::consensus::serialize;
 use bitcoin::hashes::sha256t::Tag;
-use bitcoin::hashes::{sha256t_hash_newtype, Hash, HashEngine};
+use bitcoin::hashes::{hash160, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
     Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
@@ -282,28 +282,59 @@ pub fn silent_payment_signing_key<C: Signing>(
 /// `None` if public key could not be extracted.
 ///
 /// See section _Inputs For Shared Secret Derivation_ in BIP352 for details.
+// TODO: Add reason for rejection into result
 pub fn input_public_key(prevout: &Script, input: &TxIn) -> Option<PublicKey> {
     if prevout.is_p2pkh() {
-        let ss = input.script_sig.as_bytes();
-        ss.get(ss.len() - 33..)
+        let hash = match prevout.as_bytes() {
+            [0x76, 0xA9, 0x14, hash @ .., 0x88, 0xAC] if hash.len() == 20 => Some(hash),
+            _ => None,
+        }?;
+
+        // Search for a public key matching given hash due to malleability.
+        // TODO: Improve comment
+        input
+            .script_sig
+            .as_bytes()
+            .windows(33)
+            .rev()
+            .find(|pk_candidate| {
+                hash160::Hash::hash(pk_candidate).as_byte_array().as_slice() == hash
+            })
             .and_then(|b| PublicKey::from_slice(b).ok())
     } else if prevout.is_p2wpkh() {
         input
             .witness
             .nth(1)
+            .filter(|b| b.len() == 33)
             .and_then(|b| PublicKey::from_slice(b).ok())
     } else if prevout.is_p2tr() {
-        prevout
-            .as_bytes()
-            .get(2..)
-            .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
-            .map(|k| k.public_key(Parity::Even))
+        const NUMS_H: [u8; 32] = [
+            0x50, 0x92, 0x9b, 0x74, 0xc1, 0xa0, 0x49, 0x54, 0xb7, 0x8b, 0x4b, 0x60, 0x35, 0xe9,
+            0x7a, 0x5e, 0x07, 0x8a, 0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5, 0x47, 0xbf, 0xee, 0x9a,
+            0xce, 0x80, 0x3a, 0xc0,
+        ];
+        let witness_stack = input.witness.iter().collect::<Vec<_>>();
+        let is_nums_h = match witness_stack[..] {
+            [.., _, cb, [0x50, ..]] | [.., _, cb] => cb.get(1..33) == Some(&NUMS_H),
+            _ => false,
+        };
+
+        if is_nums_h {
+            None
+        } else {
+            prevout
+                .as_bytes()
+                .get(2..)
+                .and_then(|b| XOnlyPublicKey::from_slice(b).ok())
+                .map(|k| k.public_key(Parity::Even))
+        }
     } else if prevout.is_p2sh()
         && matches!(input.script_sig.as_bytes(), [0x16, 0x0, 0x14, x@..] if x.len() == 20)
     {
         input
             .witness
             .last()
+            .filter(|b| b.len() == 33)
             .and_then(|b| PublicKey::from_slice(b).ok())
     } else {
         None

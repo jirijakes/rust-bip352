@@ -1,58 +1,92 @@
 use std::str::FromStr;
 
-use ::bech32::primitives::decode::UncheckedHrpstring;
-use ::bech32::{Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
+use bech32::primitives::decode::UncheckedHrpstring;
+use bech32::{Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
 use bitcoin::secp256k1::PublicKey;
 
+/// Human-readable part for encoded address on mainnet.
+const HRP: Hrp = Hrp::parse_unchecked("sp");
+
+/// Human-readable part for encoded address on testing networks (signet, testnet etc.).
+const THRP: Hrp = Hrp::parse_unchecked("tsp");
+
+/// Decoded Silent Payment address.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SilentPaymentAddress {
     spend_key: PublicKey,
     scan_key: PublicKey,
+    testing: bool,
 }
 
-const HRP: Hrp = Hrp::parse_unchecked("sp");
-
 impl SilentPaymentAddress {
-    pub fn new(spend_key: PublicKey, scan_key: PublicKey) -> Self {
+    pub fn new(spend_key: PublicKey, scan_key: PublicKey, testing: bool) -> Self {
         Self {
             spend_key,
             scan_key,
+            testing,
         }
     }
 
-    pub fn from_bech32(s: &str) -> Result<Self, String> {
-        let ch = UncheckedHrpstring::new(s).map_err(|e| e.to_string())?;
-
-        if ch.hrp() != HRP {
-            return Err("not hrp".to_string());
+    pub fn new_mainnet(spend_key: PublicKey, scan_key: PublicKey) -> Self {
+        Self {
+            spend_key,
+            scan_key,
+            testing: false,
         }
+    }
+
+    pub fn new_testing(spend_key: PublicKey, scan_key: PublicKey) -> Self {
+        Self {
+            spend_key,
+            scan_key,
+            testing: true,
+        }
+    }
+
+    pub fn from_bech32(s: &str) -> Result<Self, DecodeError> {
+        let ch = UncheckedHrpstring::new(s).map_err(|_| DecodeError::InvalidHrp)?;
+
+        let testing = if ch.hrp() == HRP {
+            false
+        } else if ch.hrp() == THRP {
+            true
+        } else {
+            Err(DecodeError::UnknownHrp(ch.hrp().to_string()))?
+        };
 
         ch.validate_checksum::<Bech32m>()
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| DecodeError::InvalidChecksum)?;
 
         let mut c = ch.remove_checksum::<Bech32m>();
 
-        match c.remove_witness_version() {
-            Some(Fe32::Q) => {
-                let data = c.byte_iter().collect::<Vec<_>>();
-                let (scan_data, spend_data) = data.split_at(33);
-                Ok(SilentPaymentAddress {
-                    spend_key: PublicKey::from_slice(spend_data).unwrap(),
-                    scan_key: PublicKey::from_slice(scan_data).unwrap(),
-                })
-            }
-            _ => Err("Incorrect version.".to_string()),
+        let data: Vec<u8> = match c.remove_witness_version() {
+            Some(Fe32::L) => Err(DecodeError::Version)?,
+            Some(Fe32::Q) => c.byte_iter().collect(),
+            Some(_) => c.byte_iter().take(66).collect(),
+            None => Err(DecodeError::Version)?,
+        };
+
+        if data.len() == 66 {
+            let (scan_data, spend_data) = data.split_at(33);
+            Ok(SilentPaymentAddress {
+                spend_key: PublicKey::from_slice(spend_data).unwrap(),
+                scan_key: PublicKey::from_slice(scan_data).unwrap(),
+                testing,
+            })
+        } else {
+            Err(DecodeError::InvalidLength(data.len(), 66))?
         }
     }
 
     pub fn to_bech32(&self) -> String {
+        let hrp = if self.is_testing() { THRP } else { HRP };
         self.scan_key
             .serialize()
             .iter()
             .chain(self.spend_key.serialize().iter())
             .copied()
             .bytes_to_fes()
-            .with_checksum::<Bech32m>(&HRP)
+            .with_checksum::<Bech32m>(&hrp)
             .with_witness_version(Fe32::Q)
             .chars()
             .collect()
@@ -65,10 +99,14 @@ impl SilentPaymentAddress {
     pub fn scan_key(&self) -> PublicKey {
         self.scan_key
     }
+
+    pub fn is_testing(&self) -> bool {
+        self.testing
+    }
 }
 
 impl FromStr for SilentPaymentAddress {
-    type Err = String;
+    type Err = DecodeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_bech32(s)
@@ -79,6 +117,15 @@ impl std::fmt::Display for SilentPaymentAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_bech32())
     }
+}
+
+#[derive(Debug)]
+pub enum DecodeError {
+    UnknownHrp(String),
+    InvalidHrp,
+    InvalidChecksum,
+    Version,
+    InvalidLength(usize, usize),
 }
 
 #[cfg(test)]

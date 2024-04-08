@@ -119,7 +119,7 @@ impl std::fmt::Display for SilentPaymentAddress {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DecodeError {
     UnknownHrp(String),
     InvalidHrp,
@@ -130,26 +130,91 @@ pub enum DecodeError {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use bech32::{Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
+    use bitcoin::secp256k1::{PublicKey, SecretKey};
+    use proptest::prelude::*;
+    use rand::rngs::OsRng;
+    use secp256k1::Secp256k1;
 
-    use super::SilentPaymentAddress;
+    use super::{DecodeError, SilentPaymentAddress, HRP, THRP};
 
-    #[test]
-    fn parse() {
-        [
-	    "sp1qqgrz6j0lcqnc04vxccydl0kpsj4frfje0ktmgcl2t346hkw30226xqupawdf48k8882j0strrvcmgg2kdawz53a54dd376ngdhak364hzcmynqtn",
-	    "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgq7c2zfthc6x3a5yecwc52nxa0kfd20xuz08zyrjpfw4l2j257yq6qgnkdh5",
-	    "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqaxww2fnhrx05cghth75n0qcj59e3e2anscr0q9wyknjxtxycg07y3pevyj",
-	    "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjex54dmqmmv6rw353tsuqhs99ydvadxzrsy9nuvk74epvee55drs734pqq",
-	    "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv",
-	    "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjyh2ju7hd5gj57jg5r9lev3pckk4n2shtzaq34467erzzdfajfggty6aa5",
-	    "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqsg59z2rppn4qlkx0yz9sdltmjv3j8zgcqadjn4ug98m3t6plujsq9qvu5n",
-	    "sp1qqw6vczcfpdh5nf5y2ky99kmqae0tr30hgdfg88parz50cp80wd2wqqauj52ymtc4xdkmx3tgyhrsemg2g3303xk2gtzfy8h8ejet8fz8jcw23zua",
-	    "sp1qqw6vczcfpdh5nf5y2ky99kmqae0tr30hgdfg88parz50cp80wd2wqqlv6saelkk5snl4wfutyxrchpzzwm8rjp3z6q7apna59z9huq4x754e5atr"
-	]
-	    .iter().for_each(|s| {
-		let res = SilentPaymentAddress::from_str(s);
-		assert!(res.is_ok(), "{s} : {res:?}");
-	    });
+    fn secret_key() -> impl Strategy<Value = SecretKey> {
+        Just(SecretKey::new(&mut OsRng))
+    }
+
+    fn public_key() -> impl Strategy<Value = PublicKey> {
+        secret_key().prop_map(|sec| sec.public_key(&Secp256k1::new()))
+    }
+
+    fn make_address<'a>(data: impl Iterator<Item = &'a u8>, hrp: &Hrp, version: Fe32) -> String {
+        data.copied()
+            .bytes_to_fes()
+            .with_checksum::<Bech32m>(hrp)
+            .with_witness_version(version)
+            .chars()
+            .collect()
+    }
+
+    #[rustfmt::skip]
+    prop_compose! {
+	fn silent_payment_address_v0()(
+            pk1 in public_key(),
+            pk2 in public_key(),
+            hrp in prop_oneof!(Just(HRP), Just(THRP))
+	) -> String {
+	    make_address(
+		pk1.serialize().iter().chain(pk2.serialize().iter()),
+		&hrp,
+		Fe32::Q
+	    )
+	}
+    }
+
+    #[rustfmt::skip]
+    prop_compose! {
+	fn silent_payment_address_v0_long()(
+            pk1 in public_key(),
+            pk2 in public_key(),
+	    appendix in prop::collection::vec(prop::num::u8::ANY, 1..10),
+            hrp in prop_oneof!(Just(HRP), Just(THRP))
+	) -> String {
+	    make_address(
+		pk1.serialize().iter().chain(pk2.serialize().iter()).chain(appendix.iter()),
+		&hrp,
+		Fe32::Q
+	    )
+	}
+    }
+
+    #[rustfmt::skip]
+    prop_compose! {
+	fn silent_payment_address_v31()(
+            data in prop::collection::vec(prop::num::u8::ANY, 0..500),
+            hrp in prop_oneof!(Just(HRP), Just(THRP))
+	) -> String {
+	    make_address(data.iter(), &hrp, Fe32::L)
+	}
+    }
+
+    #[rustfmt::skip]
+    proptest! {
+	#[test]
+	fn parse_valid_address(s in silent_payment_address_v0()) {
+	    let addr = SilentPaymentAddress::from_bech32(&s);
+            prop_assert!(addr.is_ok());
+	    if let Ok(addr) = addr {
+		prop_assert_eq!(addr.is_testing(), s.starts_with("tsp"));
+	    }
+	}
+
+	#[test]
+	fn parse_invalid_address_v31(s in silent_payment_address_v31()) {
+            prop_assert_eq!(SilentPaymentAddress::from_bech32(&s), Err(DecodeError::Version));
+	}
+
+	#[test]
+	fn parse_invalid_address_v0(s in silent_payment_address_v0_long()) {
+            prop_assert!(matches!(SilentPaymentAddress::from_bech32(&s), Err(DecodeError::InvalidLength(_, 66))));
+	}
     }
 }

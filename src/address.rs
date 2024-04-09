@@ -188,6 +188,29 @@ mod tests {
 
     #[rustfmt::skip]
     prop_compose! {
+	fn silent_payment_address_vx()(
+            pk1 in public_key(),
+            pk2 in public_key(),
+	    appendix in prop::collection::vec(prop::num::u8::ANY, 0..100),
+            hrp in prop_oneof![Just(HRP), Just(THRP)],
+	    version in prop_oneof![
+		Just(Fe32::P), Just(Fe32::Z), Just(Fe32::R), Just(Fe32::Y), Just(Fe32::_9), Just(Fe32::X),
+		Just(Fe32::_8), Just(Fe32::G), Just(Fe32::F), Just(Fe32::_2), Just(Fe32::T), Just(Fe32::V),
+		Just(Fe32::D), Just(Fe32::W), Just(Fe32::_0) , Just(Fe32::S) /*, Just(Fe32::_3), Just(Fe32::J),
+		Just(Fe32::N), Just(Fe32::_5), Just(Fe32::_4), Just(Fe32::K), Just(Fe32::H), Just(Fe32::C),
+		Just(Fe32::E), Just(Fe32::_6), Just(Fe32::M), Just(Fe32::U), Just(Fe32::A), Just(Fe32::_7),*/
+	    ]
+	) -> String {
+	    make_address(
+		pk1.serialize().iter().chain(pk2.serialize().iter()).chain(appendix.iter()),
+		&hrp,
+		version
+	    )
+	}
+    }
+
+    #[rustfmt::skip]
+    prop_compose! {
 	fn silent_payment_address_v31()(
             data in prop::collection::vec(prop::num::u8::ANY, 0..500),
             hrp in prop_oneof!(Just(HRP), Just(THRP))
@@ -199,8 +222,18 @@ mod tests {
     #[rustfmt::skip]
     proptest! {
 	#[test]
-	fn parse_valid_address(s in silent_payment_address_v0()) {
+	fn parse_valid_address_v0(s in silent_payment_address_v0()) {
 	    let addr = SilentPaymentAddress::from_bech32(&s);
+            prop_assert!(addr.is_ok());
+	    if let Ok(addr) = addr {
+		prop_assert_eq!(addr.is_testing(), s.starts_with("tsp"));
+	    }
+	}
+
+	#[test]
+	fn parse_valid_address_vx(s in silent_payment_address_vx()) {
+	    let addr = SilentPaymentAddress::from_bech32(&s);
+	    println!("{s} {:?}", addr);
             prop_assert!(addr.is_ok());
 	    if let Ok(addr) = addr {
 		prop_assert_eq!(addr.is_testing(), s.starts_with("tsp"));

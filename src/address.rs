@@ -233,7 +233,6 @@ mod tests {
 	#[test]
 	fn parse_valid_address_vx(s in silent_payment_address_vx()) {
 	    let addr = SilentPaymentAddress::from_bech32(&s);
-	    println!("{s} {:?}", addr);
             prop_assert!(addr.is_ok());
 	    if let Ok(addr) = addr {
 		prop_assert_eq!(addr.is_testing(), s.starts_with("tsp"));

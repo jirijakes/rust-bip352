@@ -18,6 +18,7 @@ pub struct SilentPaymentAddress {
 }
 
 impl SilentPaymentAddress {
+    /// Creates new Silent Payment Address from given spend key and scan key.
     pub fn new(spend_key: PublicKey, scan_key: PublicKey) -> Self {
         Self {
             spend_key,
@@ -25,8 +26,9 @@ impl SilentPaymentAddress {
         }
     }
 
-    pub fn from_bech32(s: &str) -> Result<Self, DecodeError> {
-        let ch = UncheckedHrpstring::new(s).map_err(|_| DecodeError::InvalidHrp)?;
+    /// Attempts to decode given string as Silent Payment Address.
+    pub fn from_bech32(s: impl AsRef<str>) -> Result<Self, DecodeError> {
+        let ch = UncheckedHrpstring::new(s.as_ref()).map_err(|_| DecodeError::InvalidHrp)?;
 
         ch.validate_checksum::<Bech32m>()
             .map_err(|_| DecodeError::InvalidChecksum)?;
@@ -47,10 +49,11 @@ impl SilentPaymentAddress {
                 scan_key: PublicKey::from_slice(scan_data).unwrap(),
             })
         } else {
-            Err(DecodeError::InvalidLength(data.len(), 66))?
+            Err(DecodeError::InvalidLength)?
         }
     }
 
+    /// Encodes this Silent Payment Address into Bech32 string.
     pub fn to_bech32(&self, testing: bool) -> String {
         let hrp = if testing { THRP } else { HRP };
         self.scan_key
@@ -65,10 +68,12 @@ impl SilentPaymentAddress {
             .collect()
     }
 
+    /// Returns spend key of this address.
     pub fn spend_key(&self) -> PublicKey {
         self.spend_key
     }
 
+    /// Returns scan key of this address.
     pub fn scan_key(&self) -> PublicKey {
         self.scan_key
     }
@@ -82,13 +87,23 @@ impl FromStr for SilentPaymentAddress {
     }
 }
 
+/// Errors as result of parsing Silent Payment Address.
 #[derive(Debug, PartialEq, Eq)]
 pub enum DecodeError {
+    /// Human-readable part of the address was not one of 'sp' or 'tsp'.
     UnknownHrp(String),
+
+    /// Human-readable part of the address could not be found.
     InvalidHrp,
+
+    /// Checksum of the address was invalid.
     InvalidChecksum,
+
+    /// Version of the address was not found or was not in range 0 to 16.
     Version,
-    InvalidLength(usize, usize),
+
+    /// Length of data-part in the address was not as expected.
+    InvalidLength,
 }
 
 #[cfg(test)]
@@ -193,24 +208,24 @@ mod tests {
 	    
 	#[test]
 	fn parse_valid_address_v0(s in silent_payment_address_v0()) {
-	    let addr = SilentPaymentAddress::from_bech32(&s);
+	    let addr = SilentPaymentAddress::from_bech32(s);
             prop_assert!(addr.is_ok());
 	}
 
 	#[test]
 	fn parse_valid_address_vx(s in silent_payment_address_vx()) {
-	    let addr = SilentPaymentAddress::from_bech32(&s);
+	    let addr = SilentPaymentAddress::from_bech32(s);
             prop_assert!(addr.is_ok());
 	}
 
 	#[test]
 	fn parse_invalid_address_v31(s in silent_payment_address_v31()) {
-            prop_assert_eq!(SilentPaymentAddress::from_bech32(&s), Err(DecodeError::Version));
+            prop_assert_eq!(SilentPaymentAddress::from_bech32(s), Err(DecodeError::Version));
 	}
 
 	#[test]
 	fn parse_invalid_address_v0(s in silent_payment_address_v0_long()) {
-            prop_assert!(matches!(SilentPaymentAddress::from_bech32(&s), Err(DecodeError::InvalidLength(_, 66))));
+            prop_assert_eq!(SilentPaymentAddress::from_bech32(s), Err(DecodeError::InvalidLength));
 	}
     }
 }

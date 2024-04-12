@@ -185,6 +185,13 @@ mod tests {
     #[rustfmt::skip]
     proptest! {
 	#[test]
+	fn roundtrip_v0(s in silent_payment_address_v0()) {
+	    let testing = s.starts_with("tsp");
+	    let addr = SilentPaymentAddress::from_bech32(&s).expect("is OK");
+	    prop_assert_eq!(addr.to_bech32(testing), s);
+	}
+	    
+	#[test]
 	fn parse_valid_address_v0(s in silent_payment_address_v0()) {
 	    let addr = SilentPaymentAddress::from_bech32(&s);
             prop_assert!(addr.is_ok());

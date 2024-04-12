@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use bitcoin::hashes::sha256t::Tag;
 use bitcoin::hashes::{Hash, HashEngine};
+use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
+use crate::label::Label;
 use crate::{
     input_public_key, Aggregate, InputHash, LabelHash, LabelTag, SharedSecret, SilentPaymentOutput,
 };
@@ -15,7 +17,7 @@ use crate::{
 struct Key {
     scan_key: SecretKey,
     spend_key: PublicKey,
-    labels: Vec<Scalar>,
+    labels: Vec<Label>,
     change_label: Scalar,
 }
 
@@ -42,14 +44,9 @@ pub struct Receive {
 impl Receive {
     pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<u32>) -> Self {
         // TODO: Move out
-        let labels = labels
+        let labels: Result<Vec<Label>, OutOfRangeError> = labels
             .into_iter()
-            .map(|m| {
-                let mut engine = LabelTag::engine();
-                engine.input(&scan_key.secret_bytes());
-                engine.input(&m.to_be_bytes());
-                Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
-            })
+            .map(|m| Label::from_index(&scan_key, m))
             .collect();
         let change_label = {
             let mut engine = LabelTag::engine();

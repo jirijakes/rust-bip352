@@ -11,6 +11,7 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
 
 pub mod address;
+pub mod label;
 #[cfg(feature = "receive")]
 pub mod receive;
 #[cfg(feature = "send")]

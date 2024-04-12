@@ -76,11 +76,11 @@ impl Receive {
             .flat_map(|key| {
                 let scan_key = key.scan_key.public_key(secp);
 
-                let mut addrs = vec![SilentPaymentAddress::new(key.spend_key, scan_key, false)];
+                let mut addrs = vec![SilentPaymentAddress::new(key.spend_key, scan_key)];
 
                 key.labels.iter().for_each(|l| {
                     let b_m = key.spend_key.add_exp_tweak(secp, l).unwrap();
-                    addrs.push(SilentPaymentAddress::new(b_m, scan_key, false))
+                    addrs.push(SilentPaymentAddress::new(b_m, scan_key))
                 });
 
                 addrs

@@ -15,44 +15,18 @@ const THRP: Hrp = Hrp::parse_unchecked("tsp");
 pub struct SilentPaymentAddress {
     spend_key: PublicKey,
     scan_key: PublicKey,
-    testing: bool,
 }
 
 impl SilentPaymentAddress {
-    pub fn new(spend_key: PublicKey, scan_key: PublicKey, testing: bool) -> Self {
+    pub fn new(spend_key: PublicKey, scan_key: PublicKey) -> Self {
         Self {
             spend_key,
             scan_key,
-            testing,
-        }
-    }
-
-    pub fn new_mainnet(spend_key: PublicKey, scan_key: PublicKey) -> Self {
-        Self {
-            spend_key,
-            scan_key,
-            testing: false,
-        }
-    }
-
-    pub fn new_testing(spend_key: PublicKey, scan_key: PublicKey) -> Self {
-        Self {
-            spend_key,
-            scan_key,
-            testing: true,
         }
     }
 
     pub fn from_bech32(s: &str) -> Result<Self, DecodeError> {
         let ch = UncheckedHrpstring::new(s).map_err(|_| DecodeError::InvalidHrp)?;
-
-        let testing = if ch.hrp() == HRP {
-            false
-        } else if ch.hrp() == THRP {
-            true
-        } else {
-            Err(DecodeError::UnknownHrp(ch.hrp().to_string()))?
-        };
 
         ch.validate_checksum::<Bech32m>()
             .map_err(|_| DecodeError::InvalidChecksum)?;
@@ -71,15 +45,14 @@ impl SilentPaymentAddress {
             Ok(SilentPaymentAddress {
                 spend_key: PublicKey::from_slice(spend_data).unwrap(),
                 scan_key: PublicKey::from_slice(scan_data).unwrap(),
-                testing,
             })
         } else {
             Err(DecodeError::InvalidLength(data.len(), 66))?
         }
     }
 
-    pub fn to_bech32(&self) -> String {
-        let hrp = if self.is_testing() { THRP } else { HRP };
+    pub fn to_bech32(&self, testing: bool) -> String {
+        let hrp = if testing { THRP } else { HRP };
         self.scan_key
             .serialize()
             .iter()
@@ -99,10 +72,6 @@ impl SilentPaymentAddress {
     pub fn scan_key(&self) -> PublicKey {
         self.scan_key
     }
-
-    pub fn is_testing(&self) -> bool {
-        self.testing
-    }
 }
 
 impl FromStr for SilentPaymentAddress {
@@ -110,12 +79,6 @@ impl FromStr for SilentPaymentAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_bech32(s)
-    }
-}
-
-impl std::fmt::Display for SilentPaymentAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.to_bech32())
     }
 }
 
@@ -225,18 +188,12 @@ mod tests {
 	fn parse_valid_address_v0(s in silent_payment_address_v0()) {
 	    let addr = SilentPaymentAddress::from_bech32(&s);
             prop_assert!(addr.is_ok());
-	    if let Ok(addr) = addr {
-		prop_assert_eq!(addr.is_testing(), s.starts_with("tsp"));
-	    }
 	}
 
 	#[test]
 	fn parse_valid_address_vx(s in silent_payment_address_vx()) {
 	    let addr = SilentPaymentAddress::from_bech32(&s);
             prop_assert!(addr.is_ok());
-	    if let Ok(addr) = addr {
-		prop_assert_eq!(addr.is_testing(), s.starts_with("tsp"));
-	    }
 	}
 
 	#[test]

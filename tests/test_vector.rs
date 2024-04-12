@@ -52,7 +52,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
         let given_addresses: HashSet<String> = receive
             .addresses(secp)
             .iter()
-            .map(|spa| spa.to_string())
+            .map(|spa| spa.to_bech32(false))
             .collect();
         assert_eq!(given_addresses, expected_addresses, "{test}");
 

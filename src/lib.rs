@@ -5,11 +5,10 @@ use bitcoin::hashes::sha256t::Tag;
 use bitcoin::hashes::{hash160, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
-    Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
-    Verification, XOnlyPublicKey,
+    Parity, PublicKey, Scalar, Secp256k1, SecretKey, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
-use label::{Label, XxxLabel};
+use label::XxxLabel;
 
 pub mod address;
 pub mod label;
@@ -248,20 +247,6 @@ impl SharedSecret {
             (p_k, t_k)
         }
     }
-}
-
-/// Creates key pair used for schnorr signing.
-pub fn silent_payment_signing_key<C: Signing>(
-    spend_key: SecretKey,
-    tweak: Scalar,
-    label: Option<Label>,
-    secp: &Secp256k1<C>,
-) -> Result<Keypair, SecpError> {
-    let d = match label {
-        None => spend_key.add_tweak(&tweak)?,
-        Some(label) => spend_key.add_tweak(&tweak)?.add_tweak(&label.to_scalar())?,
-    };
-    Ok(Keypair::from_secret_key(secp, &d))
 }
 
 /// Attempts to extract public key from an input and the output it points to. Returns

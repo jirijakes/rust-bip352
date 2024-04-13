@@ -11,15 +11,6 @@ pub enum XxxLabel {
     Index(LabelIndex),
 }
 
-impl XxxLabel {
-    pub fn to_label_index(&self) -> Option<LabelIndex> {
-        match self {
-            XxxLabel::Change => None,
-            XxxLabel::Index(i) => Some(*i),
-        }
-    }
-}
-
 /// Index <i>m</i> of a label, guaranteed to be greater than 0 (which is reserved
 /// for change).
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialEq, PartialOrd, Eq)]
@@ -100,6 +91,10 @@ impl ChangeLabel {
         SecretKey::from_slice(&self.0.to_be_bytes())
             .expect("tweak is on curve, so should be the secret key")
             .public_key(secp)
+    }
+
+    pub(crate) fn to_scalar(&self) -> Scalar {
+        self.0
     }
 }
 

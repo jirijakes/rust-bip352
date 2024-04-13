@@ -193,12 +193,8 @@ fn test_spending(
             .iter()
             .find(|o| o.public_key() == public_key)
         {
-            let keypair = spend::signing_keypair(
-                spend_key,
-                scan_key,
-                spo.tweak(),
-                spo.label().and_then(|l| l.to_label_index()),
-            );
+            let keypair =
+                spend::signing_keypair(spend_key, scan_key, spo.tweak(), spo.label()).unwrap();
 
             let msg = Message::from_digest(
                 sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),

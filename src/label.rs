@@ -1,12 +1,19 @@
 use bitcoin::hashes::{sha256t::Tag, Hash, HashEngine};
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::scalar::OutOfRangeError;
-use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
+use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification};
 
 use crate::{LabelHash, LabelTag};
 
+#[derive(Copy, Clone, Hash, Debug, Ord, PartialEq, PartialOrd, Eq)]
+pub enum XxxLabel {
+    Change,
+    Index(LabelIndex),
+}
+
 /// Index <i>m</i> of a label, guaranteed to be greater than 0 (which is reserved
 /// for change).
+#[derive(Copy, Clone, Debug, Hash, Ord, PartialEq, PartialOrd, Eq)]
 pub struct LabelIndex(u32);
 
 impl TryFrom<u32> for LabelIndex {
@@ -47,10 +54,28 @@ impl Label {
     ) -> Result<PublicKey, secp256k1::Error> {
         spend_key.add_exp_tweak(secp, &self.tweak)
     }
+
+    pub fn to_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> PublicKey {
+        SecretKey::from_slice(&self.tweak.to_be_bytes())
+            .expect("tweak is on curve, so should be the secret key")
+            .public_key(secp)
+    }
+
+    pub fn to_xxx_label(&self) -> XxxLabel {
+        XxxLabel::Index(self.index)
+    }
 }
 
 /// Label used for change. This label is never given to others.
 pub struct ChangeLabel(Scalar);
+
+impl ChangeLabel {
+    pub fn to_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> PublicKey {
+        SecretKey::from_slice(&self.0.to_be_bytes())
+            .expect("tweak is on curve, so should be the secret key")
+            .public_key(secp)
+    }
+}
 
 /// Reserved label for change.
 const CHANGE_LABEL_INDEX: u32 = 0;

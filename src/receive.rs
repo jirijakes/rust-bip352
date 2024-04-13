@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use bitcoin::hashes::sha256t::Tag;
-use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
@@ -9,7 +7,7 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::label::{ChangeLabel, Label, LabelIndex};
+use crate::label::{ChangeLabel, Label, LabelIndex, XxxLabel};
 use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
 
 struct Key {
@@ -193,22 +191,24 @@ impl<'a> Scanner<'a> {
             change_label,
         } = key;
 
-        let shared_secret = SharedSecret::new(input_hash, input_public_key, *scan_key, secp);
-
-        let labels = //std::iter::once(change_label)
-            // .chain(
-		labels.iter()
-	    // )
-            .flat_map(|&label| {
-                let label_public_key = SecretKey::from_slice(&label.to_be_bytes())
-                    .unwrap()
-                    .public_key(secp);
+        let mut labels = labels
+            .iter()
+            .flat_map(|label| {
+                let label_public_key = label.to_public_key(secp);
                 [
-                    (label_public_key, label),
-                    (label_public_key.negate(secp), label),
+                    (label_public_key, label.to_xxx_label()),
+                    (label_public_key.negate(secp), label.to_xxx_label()),
                 ]
             })
             .collect::<HashMap<_, _>>();
+
+        labels.insert(change_label.to_public_key(secp), XxxLabel::Change);
+        // labels.insert(
+            // change_label.to_public_key(secp).negate(secp),
+            // XxxLabel::Change,
+        // );
+
+        let shared_secret = SharedSecret::new(input_hash, input_public_key, *scan_key, secp);
 
         outputs
             .iter()
@@ -227,7 +227,7 @@ impl<'a> Scanner<'a> {
                                 SilentPaymentOutput::new_with_label(
                                     x.x_only_public_key().0,
                                     tk,
-                                    label.to_be_bytes(),
+                                    *label,
                                 )
                             })
                         })

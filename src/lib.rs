@@ -9,6 +9,7 @@ use bitcoin::secp256k1::{
     Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
+use label::XxxLabel;
 
 pub mod address;
 pub mod label;
@@ -36,7 +37,7 @@ sha256t_hash_newtype! {
 pub struct SilentPaymentOutput {
     public_key: XOnlyPublicKey,
     tweak: Scalar,
-    label: Option<[u8; 32]>,
+    label: Option<XxxLabel>,
 }
 
 impl std::hash::Hash for SilentPaymentOutput {
@@ -56,7 +57,7 @@ impl SilentPaymentOutput {
         }
     }
 
-    pub fn new_with_label(public_key: XOnlyPublicKey, tweak: Scalar, label: [u8; 32]) -> Self {
+    pub fn new_with_label(public_key: XOnlyPublicKey, tweak: Scalar, label: XxxLabel) -> Self {
         Self {
             public_key,
             tweak,
@@ -72,7 +73,7 @@ impl SilentPaymentOutput {
         self.tweak
     }
 
-    pub fn label(&self) -> Option<[u8; 32]> {
+    pub fn label(&self) -> Option<XxxLabel> {
         self.label
     }
 }

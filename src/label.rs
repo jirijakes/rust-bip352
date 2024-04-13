@@ -11,6 +11,15 @@ pub enum XxxLabel {
     Index(LabelIndex),
 }
 
+impl XxxLabel {
+    pub fn to_label_index(&self) -> Option<LabelIndex> {
+        match self {
+            XxxLabel::Change => None,
+            XxxLabel::Index(i) => Some(*i),
+        }
+    }
+}
+
 /// Index <i>m</i> of a label, guaranteed to be greater than 0 (which is reserved
 /// for change).
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialEq, PartialOrd, Eq)]
@@ -28,13 +37,26 @@ impl TryFrom<u32> for LabelIndex {
     }
 }
 
-impl Into<u32> for LabelIndex {
-    fn into(self) -> u32 {
-        self.0
+impl TryFrom<&u32> for LabelIndex {
+    type Error = LabelZeroError;
+
+    fn try_from(value: &u32) -> Result<Self, Self::Error> {
+        if *value == CHANGE_LABEL_INDEX {
+            Err(LabelZeroError)
+        } else {
+            Ok(Self(*value))
+        }
+    }
+}
+
+impl From<LabelIndex> for u32 {
+    fn from(val: LabelIndex) -> Self {
+        val.0
     }
 }
 
 /// Error caused by attempting to use 0 as label (which is reserved for change).
+#[derive(Debug)]
 pub struct LabelZeroError;
 
 /// Label used to differentiate various purposes of Silent Payment address,
@@ -59,6 +81,10 @@ impl Label {
         SecretKey::from_slice(&self.tweak.to_be_bytes())
             .expect("tweak is on curve, so should be the secret key")
             .public_key(secp)
+    }
+
+    pub(crate) fn to_scalar(&self) -> Scalar {
+        self.tweak
     }
 
     pub fn to_xxx_label(&self) -> XxxLabel {

@@ -9,7 +9,7 @@ use bitcoin::secp256k1::{
     Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
-use label::XxxLabel;
+use label::{Label, XxxLabel};
 
 pub mod address;
 pub mod label;
@@ -204,25 +204,6 @@ impl<K> Default for Aggregate<K> {
 }
 
 #[derive(Debug)]
-pub struct TweakData {
-    tweak: Scalar,
-    label: Scalar,
-}
-
-impl TweakData {
-    pub fn new(tweak: Scalar) -> Self {
-        Self {
-            tweak,
-            label: Scalar::ZERO,
-        }
-    }
-
-    pub fn new_with_label(tweak: Scalar, label: Scalar) -> Self {
-        Self { tweak, label }
-    }
-}
-
-#[derive(Debug)]
 pub struct SharedSecret([u8; 33]);
 
 impl SharedSecret {
@@ -272,11 +253,14 @@ impl SharedSecret {
 /// Creates key pair used for schnorr signing.
 pub fn silent_payment_signing_key<C: Signing>(
     spend_key: SecretKey,
-    TweakData { tweak, label }: &TweakData,
+    tweak: Scalar,
+    label: Option<Label>,
     secp: &Secp256k1<C>,
 ) -> Result<Keypair, SecpError> {
-    // d = b_spend + t_k + hash(b_scan || m)
-    let d = spend_key.add_tweak(tweak)?.add_tweak(label)?;
+    let d = match label {
+        None => spend_key.add_tweak(&tweak)?,
+        Some(label) => spend_key.add_tweak(&tweak)?.add_tweak(&label.to_scalar())?,
+    };
     Ok(Keypair::from_secret_key(secp, &d))
 }
 

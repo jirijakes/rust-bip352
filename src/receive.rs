@@ -7,14 +7,14 @@ use bitcoin::secp256k1::{
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::label::{ChangeLabelTweak, Label, LabelIndex, LabelTweak};
+use crate::label::{Label, LabelIndex, LabelTweak};
 use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
 
 struct Key {
     scan_key: SecretKey,
     spend_key: PublicKey,
     labels: Vec<LabelTweak>,
-    change_label: ChangeLabelTweak,
+    change_label: LabelTweak,
 }
 
 pub struct Receive {
@@ -196,8 +196,8 @@ impl<'a> Scanner<'a> {
             .flat_map(|label| {
                 let label_public_key = label.to_public_key(secp);
                 [
-                    (label_public_key, label.to_label()),
-                    (label_public_key.negate(secp), label.to_label()),
+                    (label_public_key, label.label()),
+                    (label_public_key.negate(secp), label.label()),
                 ]
             })
             .collect::<HashMap<_, _>>();

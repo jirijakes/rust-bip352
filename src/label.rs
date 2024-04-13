@@ -53,27 +53,12 @@ impl From<LabelIndex> for u32 {
 #[derive(Debug)]
 pub struct LabelZeroError;
 
-/// Label used for change. This label is never given to others.
-pub struct ChangeLabelTweak(Scalar);
-
-impl ChangeLabelTweak {
-    pub fn to_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> PublicKey {
-        SecretKey::from_slice(&self.0.to_be_bytes())
-            .expect("tweak is on curve, so should be the secret key")
-            .public_key(secp)
-    }
-
-    pub(crate) fn to_scalar(&self) -> Scalar {
-        self.0
-    }
-}
-
 /// Label used to differentiate various purposes of Silent Payment address,
 /// generated for a particular scan key (i. e. it is valid only for that
 /// scan key for which it was derived).
 pub struct LabelTweak {
     tweak: Scalar,
-    index: LabelIndex,
+    label: Label,
 }
 
 impl LabelTweak {
@@ -82,12 +67,18 @@ impl LabelTweak {
         scan_key: &SecretKey,
         index: LabelIndex,
     ) -> Result<LabelTweak, OutOfRangeError> {
-        Self::label_tweak(scan_key, index.into()).map(|tweak| LabelTweak { tweak, index })
+        Self::label_tweak(scan_key, index.into()).map(|tweak| LabelTweak {
+            tweak,
+            label: Label::Index(index),
+        })
     }
 
     /// Creates label for change.
-    pub fn change(scan_key: &SecretKey) -> Result<ChangeLabelTweak, OutOfRangeError> {
-        Self::label_tweak(scan_key, CHANGE_LABEL_INDEX).map(ChangeLabelTweak)
+    pub fn change(scan_key: &SecretKey) -> Result<LabelTweak, OutOfRangeError> {
+        Self::label_tweak(scan_key, CHANGE_LABEL_INDEX).map(|tweak| LabelTweak {
+            tweak,
+            label: Label::Change,
+        })
     }
 
     /// Calculates tweak of the given label <i>m</i>  using
@@ -120,7 +111,7 @@ impl LabelTweak {
         self.tweak
     }
 
-    pub fn to_label(&self) -> Label {
-        Label::Index(self.index)
+    pub fn label(&self) -> Label {
+        self.label
     }
 }

@@ -1,18 +1,18 @@
 use bitcoin::secp256k1::{Error as SecpError, Keypair, Scalar, Secp256k1, SecretKey};
 
-use crate::label::{Label, XxxLabel};
+use crate::label::{Label, LabelTweak};
 
 pub fn signing_keypair(
     spend_key: SecretKey,
     scan_key: SecretKey,
     tweak: Scalar,
-    label: Option<XxxLabel>,
+    label: Option<Label>,
 ) -> Result<Keypair, SecpError> {
     let secp = &Secp256k1::new();
 
     let label = label.map(|x| match x {
-        XxxLabel::Change => Label::change(&scan_key).unwrap().to_scalar(),
-        XxxLabel::Index(i) => Label::from_index(&scan_key, i).unwrap().to_scalar(),
+        Label::Change => LabelTweak::change(&scan_key).unwrap().to_scalar(),
+        Label::Index(i) => LabelTweak::from_index(&scan_key, i).unwrap().to_scalar(),
     });
 
     let d = match label {

@@ -1,66 +1,37 @@
 use std::collections::{HashMap, HashSet};
 
-use bitcoin::hashes::sha256t::Tag;
-use bitcoin::hashes::{Hash, HashEngine};
+use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{
     All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
-use crate::{
-    input_public_key, Aggregate, InputHash, LabelHash, LabelTag, SharedSecret, SilentPaymentOutput,
-};
+use crate::label::{ChangeLabel, Label, LabelIndex, XxxLabel};
+use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
 
 struct Key {
     scan_key: SecretKey,
     spend_key: PublicKey,
-    labels: Vec<Scalar>,
-    change_label: Scalar,
+    labels: Vec<Label>,
+    change_label: ChangeLabel,
 }
-
-// impl Keys {
-//     pub fn add_key(
-//         &mut self,
-//         scan_key: SecretKey,
-//         spend_key: PublicKey,
-//         labels: Vec<Scalar>,
-//     ) -> &mut Self {
-//         self.0.push(Key {
-//             scan_key,
-//             spend_key,
-//             labels,
-//         });
-//         self
-//     }
-// }
 
 pub struct Receive {
     keys: Vec<Key>,
 }
 
 impl Receive {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<u32>) -> Self {
-        // TODO: Move out
-        let labels = labels
+    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<LabelIndex>) -> Self {
+        let labels: Result<Vec<Label>, OutOfRangeError> = labels
             .into_iter()
-            .map(|m| {
-                let mut engine = LabelTag::engine();
-                engine.input(&scan_key.secret_bytes());
-                engine.input(&m.to_be_bytes());
-                Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
-            })
+            .map(|m| Label::from_index(&scan_key, m))
             .collect();
-        let change_label = {
-            let mut engine = LabelTag::engine();
-            engine.input(&scan_key.secret_bytes());
-            engine.input(&0u32.to_be_bytes());
-            Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array()).unwrap()
-        };
+        let change_label = Label::change(&scan_key).unwrap();
         let key = Key {
             scan_key,
             spend_key,
-            labels,
+            labels: labels.unwrap(),
             change_label,
         };
 
@@ -78,8 +49,8 @@ impl Receive {
 
                 let mut addrs = vec![SilentPaymentAddress::new(key.spend_key, scan_key)];
 
-                key.labels.iter().for_each(|l| {
-                    let b_m = key.spend_key.add_exp_tweak(secp, l).unwrap();
+                key.labels.iter().for_each(|label| {
+                    let b_m = label.apply_to_key(&key.spend_key, secp).unwrap();
                     addrs.push(SilentPaymentAddress::new(b_m, scan_key))
                 });
 
@@ -220,20 +191,20 @@ impl<'a> Scanner<'a> {
             change_label,
         } = key;
 
-        let shared_secret = SharedSecret::new(input_hash, input_public_key, *scan_key, secp);
-
-        let labels = std::iter::once(change_label)
-            .chain(labels.iter())
-            .flat_map(|&label| {
-                let label_public_key = SecretKey::from_slice(&label.to_be_bytes())
-                    .unwrap()
-                    .public_key(secp);
+        let mut labels = labels
+            .iter()
+            .flat_map(|label| {
+                let label_public_key = label.to_public_key(secp);
                 [
-                    (label_public_key, label),
-                    (label_public_key.negate(secp), label),
+                    (label_public_key, label.to_xxx_label()),
+                    (label_public_key.negate(secp), label.to_xxx_label()),
                 ]
             })
             .collect::<HashMap<_, _>>();
+
+        labels.insert(change_label.to_public_key(secp), XxxLabel::Change);
+
+        let shared_secret = SharedSecret::new(input_hash, input_public_key, *scan_key, secp);
 
         outputs
             .iter()
@@ -252,7 +223,7 @@ impl<'a> Scanner<'a> {
                                 SilentPaymentOutput::new_with_label(
                                     x.x_only_public_key().0,
                                     tk,
-                                    label.to_be_bytes(),
+                                    *label,
                                 )
                             })
                         })

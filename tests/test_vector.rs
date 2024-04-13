@@ -34,7 +34,7 @@ fn bip352_test_vector() {
 fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
-    use bip352::receive::Receive;
+    use bip352::{label::LabelIndex, receive::Receive};
 
     receiving.iter().for_each(|r| {
         let spend_key =
@@ -45,7 +45,11 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.scan_priv_key).unwrap())
                 .unwrap(),
             spend_key.public_key(secp),
-            r.given.labels.clone(),
+            r.given
+                .labels
+                .iter()
+                .map(|l| LabelIndex::try_from(l).unwrap())
+                .collect(),
         );
 
         let expected_addresses: HashSet<String> = r.expected.addresses.iter().cloned().collect();
@@ -178,6 +182,10 @@ fn test_spending(
     )
     .unwrap();
 
+    let scan_key =
+        SecretKey::from_slice(&Vec::from_hex(&receiving.given.key_material.scan_priv_key).unwrap())
+            .unwrap();
+
     receiving.expected.outputs.iter().for_each(|o| {
         let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
 
@@ -185,7 +193,8 @@ fn test_spending(
             .iter()
             .find(|o| o.public_key() == public_key)
         {
-            let keypair = spend::signing_keypair(spend_key, spo.tweak(), spo.label());
+            let keypair =
+                spend::signing_keypair(spend_key, scan_key, spo.tweak(), spo.label()).unwrap();
 
             let msg = Message::from_digest(
                 sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),

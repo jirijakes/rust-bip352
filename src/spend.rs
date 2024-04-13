@@ -1,11 +1,24 @@
-use bitcoin::secp256k1::{Keypair, Scalar, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{Error as SecpError, Keypair, Scalar, Secp256k1, SecretKey};
 
-use crate::silent_payment_signing_key;
+use crate::label::{Label, XxxLabel};
 
-pub fn signing_keypair(spend_key: SecretKey, tweak: Scalar, label: Option<[u8; 32]>) -> Keypair {
+pub fn signing_keypair(
+    spend_key: SecretKey,
+    scan_key: SecretKey,
+    tweak: Scalar,
+    label: Option<XxxLabel>,
+) -> Result<Keypair, SecpError> {
     let secp = &Secp256k1::new();
 
-    let label = Scalar::from_be_bytes(label.unwrap_or([0; 32])).unwrap();
+    let label = label.map(|x| match x {
+        XxxLabel::Change => Label::change(&scan_key).unwrap().to_scalar(),
+        XxxLabel::Index(i) => Label::from_index(&scan_key, i).unwrap().to_scalar(),
+    });
 
-    silent_payment_signing_key(spend_key, &crate::TweakData { tweak, label }, secp).unwrap()
+    let d = match label {
+        None => spend_key.add_tweak(&tweak)?,
+        Some(label) => spend_key.add_tweak(&tweak)?.add_tweak(&label)?,
+    };
+
+    Ok(Keypair::from_secret_key(secp, &d))
 }

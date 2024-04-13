@@ -5,12 +5,13 @@ use bitcoin::hashes::sha256t::Tag;
 use bitcoin::hashes::{hash160, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
-    Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
-    Verification, XOnlyPublicKey,
+    Parity, PublicKey, Scalar, Secp256k1, SecretKey, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
+use label::XxxLabel;
 
 pub mod address;
+pub mod label;
 #[cfg(feature = "receive")]
 pub mod receive;
 #[cfg(feature = "send")]
@@ -35,7 +36,7 @@ sha256t_hash_newtype! {
 pub struct SilentPaymentOutput {
     public_key: XOnlyPublicKey,
     tweak: Scalar,
-    label: Option<[u8; 32]>,
+    label: Option<XxxLabel>,
 }
 
 impl std::hash::Hash for SilentPaymentOutput {
@@ -55,7 +56,7 @@ impl SilentPaymentOutput {
         }
     }
 
-    pub fn new_with_label(public_key: XOnlyPublicKey, tweak: Scalar, label: [u8; 32]) -> Self {
+    pub fn new_with_label(public_key: XOnlyPublicKey, tweak: Scalar, label: XxxLabel) -> Self {
         Self {
             public_key,
             tweak,
@@ -71,7 +72,7 @@ impl SilentPaymentOutput {
         self.tweak
     }
 
-    pub fn label(&self) -> Option<[u8; 32]> {
+    pub fn label(&self) -> Option<XxxLabel> {
         self.label
     }
 }
@@ -202,25 +203,6 @@ impl<K> Default for Aggregate<K> {
 }
 
 #[derive(Debug)]
-pub struct TweakData {
-    tweak: Scalar,
-    label: Scalar,
-}
-
-impl TweakData {
-    pub fn new(tweak: Scalar) -> Self {
-        Self {
-            tweak,
-            label: Scalar::ZERO,
-        }
-    }
-
-    pub fn new_with_label(tweak: Scalar, label: Scalar) -> Self {
-        Self { tweak, label }
-    }
-}
-
-#[derive(Debug)]
 pub struct SharedSecret([u8; 33]);
 
 impl SharedSecret {
@@ -265,17 +247,6 @@ impl SharedSecret {
             (p_k, t_k)
         }
     }
-}
-
-/// Creates key pair used for schnorr signing.
-pub fn silent_payment_signing_key<C: Signing>(
-    spend_key: SecretKey,
-    TweakData { tweak, label }: &TweakData,
-    secp: &Secp256k1<C>,
-) -> Result<Keypair, SecpError> {
-    // d = b_spend + t_k + hash(b_scan || m)
-    let d = spend_key.add_tweak(tweak)?.add_tweak(label)?;
-    Ok(Keypair::from_secret_key(secp, &d))
 }
 
 /// Attempts to extract public key from an input and the output it points to. Returns

@@ -14,6 +14,16 @@ pub enum Label {
     Index(LabelIndex),
 }
 
+impl Label {
+    /// Tweak label with a secret scan key.
+    pub fn tweak(&self, scan_key: &SecretKey) -> Result<LabelTweak, OutOfRangeError> {
+        match self {
+            Label::Change => LabelTweak::change(scan_key),
+            Label::Index(i) => LabelTweak::from_index(scan_key, *i),
+        }
+    }
+}
+
 /// Index <i>m</i> of a label, guaranteed to be greater than 0 (which is reserved
 /// for change).
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialEq, PartialOrd, Eq)]

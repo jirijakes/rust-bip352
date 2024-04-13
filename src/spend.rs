@@ -10,12 +10,12 @@ pub fn signing_keypair(
 ) -> Result<Keypair, SecpError> {
     let secp = &Secp256k1::new();
 
-    let label = label.map(|x| x.tweak(&scan_key).unwrap());
-
-    let d = match label {
-        None => spend_key.add_tweak(&tweak)?,
-        Some(label) => spend_key.add_tweak(&tweak)?.add_tweak(&label.to_scalar())?,
+    let signing_key = if let Some(label) = label {
+        let label_tweak = label.tweak(&scan_key).unwrap().to_scalar();
+        spend_key.add_tweak(&tweak)?.add_tweak(&label_tweak)?
+    } else {
+        spend_key.add_tweak(&tweak)?
     };
 
-    Ok(Keypair::from_secret_key(secp, &d))
+    Ok(Keypair::from_secret_key(secp, &signing_key))
 }

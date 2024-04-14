@@ -51,7 +51,7 @@ use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputHash, SharedSecret};
+use crate::{Aggregate, InputHash, SharedSecret, SpendPublicKey};
 
 pub struct SilentPayment<'a> {
     recipients: Vec<SilentPaymentAddress>,
@@ -133,7 +133,7 @@ impl<'a> SilentPayment<'a> {
             let input_secret_key = self.input_secret_key.get().unwrap();
 
             // scan_key -> spend_keys
-            let mut groups: HashMap<PublicKey, Vec<PublicKey>> = HashMap::new();
+            let mut groups: HashMap<PublicKey, Vec<SpendPublicKey>> = HashMap::new();
 
             self.recipients.iter().for_each(|r| {
                 groups.entry(r.scan_key()).or_default().push(r.spend_key());

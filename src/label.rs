@@ -3,7 +3,7 @@ use bitcoin::secp256k1;
 use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification};
 
-use crate::{LabelHash, LabelTag};
+use crate::{LabelHash, LabelTag, SpendPublicKey};
 
 /// Reserved label for change.
 const CHANGE_LABEL_INDEX: u32 = 0;
@@ -105,10 +105,10 @@ impl LabelTweak {
     /// Applies label to public spend key.
     pub fn apply_to_key<C: Verification>(
         &self,
-        spend_key: &PublicKey,
+        spend_key: &SpendPublicKey,
         secp: &Secp256k1<C>,
-    ) -> Result<PublicKey, secp256k1::Error> {
-        spend_key.add_exp_tweak(secp, &self.tweak)
+    ) -> Result<SpendPublicKey, secp256k1::Error> {
+        spend_key.add_tweak(&self.tweak, secp)
     }
 
     pub fn to_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> PublicKey {

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{
-    All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
+    All, Parity, PublicKey, Scalar, Secp256k1, Signing, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
@@ -25,15 +25,19 @@ pub struct Receive {
 }
 
 impl Receive {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<LabelIndex>) -> Self {
+    pub fn new(
+        scan_key: ScanSecretKey,
+        spend_key: SpendPublicKey,
+        labels: Vec<LabelIndex>,
+    ) -> Self {
         let labels: Result<Vec<LabelTweak>, OutOfRangeError> = labels
             .into_iter()
             .map(|m| LabelTweak::from_index(&scan_key, m))
             .collect();
         let change_label = LabelTweak::change(&scan_key).unwrap();
         let key = Key {
-            scan_key: ScanSecretKey(scan_key),
-            spend_key: SpendPublicKey(spend_key),
+            scan_key,
+            spend_key,
             labels: labels.unwrap(),
             change_label,
         };

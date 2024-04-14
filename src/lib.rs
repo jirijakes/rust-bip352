@@ -5,8 +5,8 @@ use bitcoin::hashes::sha256t::Tag;
 use bitcoin::hashes::{hash160, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
-    Error as SecpError, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification,
-    XOnlyPublicKey,
+    Error as SecpError, Keypair, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing,
+    Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
 use label::Label;
@@ -35,6 +35,10 @@ sha256t_hash_newtype! {
 pub struct SpendPublicKey(PublicKey);
 
 impl SpendPublicKey {
+    pub fn new(public_key: PublicKey) -> Self {
+        Self(public_key)
+    }
+
     pub fn add_tweak<C: Verification>(
         &self,
         tweak: &Scalar,
@@ -48,7 +52,22 @@ impl SpendPublicKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SpendSecretKey(SecretKey);
+
+impl SpendSecretKey {
+    pub fn new(secret_key: SecretKey) -> Self {
+        Self(secret_key)
+    }
+
+    pub fn add_tweak(&self, tweak: &Scalar) -> Result<SpendSecretKey, SecpError> {
+        self.0.add_tweak(tweak).map(SpendSecretKey)
+    }
+
+    pub fn to_keypair<C: Signing>(&self, secp: &Secp256k1<C>) -> Keypair {
+        Keypair::from_secret_key(secp, &self.0)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ScanPublicKey(PublicKey);
@@ -63,9 +82,14 @@ impl ScanPublicKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScanSecretKey(SecretKey);
 
 impl ScanSecretKey {
+    pub fn new(secret_key: SecretKey) -> Self {
+        Self(secret_key)
+    }
+
     pub fn public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> ScanPublicKey {
         ScanPublicKey(self.0.public_key(secp))
     }

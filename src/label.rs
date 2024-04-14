@@ -3,7 +3,7 @@ use bitcoin::secp256k1;
 use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification};
 
-use crate::{LabelHash, LabelTag, SpendPublicKey};
+use crate::{LabelHash, LabelTag, ScanSecretKey, SpendPublicKey};
 
 /// Reserved label for change.
 const CHANGE_LABEL_INDEX: u32 = 0;
@@ -16,7 +16,7 @@ pub enum Label {
 
 impl Label {
     /// Tweak label with a secret scan key.
-    pub fn tweak(&self, scan_key: &SecretKey) -> Result<LabelTweak, OutOfRangeError> {
+    pub fn tweak(&self, scan_key: &ScanSecretKey) -> Result<LabelTweak, OutOfRangeError> {
         match self {
             Label::Change => LabelTweak::change(scan_key),
             Label::Index(i) => LabelTweak::from_index(scan_key, *i),
@@ -74,7 +74,7 @@ pub struct LabelTweak {
 impl LabelTweak {
     /// Creates label for secret scan key and index.
     pub fn from_index(
-        scan_key: &SecretKey,
+        scan_key: &ScanSecretKey,
         index: LabelIndex,
     ) -> Result<LabelTweak, OutOfRangeError> {
         Self::label_tweak(scan_key, index.into()).map(|tweak| LabelTweak {
@@ -84,7 +84,7 @@ impl LabelTweak {
     }
 
     /// Creates label for change.
-    pub fn change(scan_key: &SecretKey) -> Result<LabelTweak, OutOfRangeError> {
+    pub fn change(scan_key: &ScanSecretKey) -> Result<LabelTweak, OutOfRangeError> {
         Self::label_tweak(scan_key, CHANGE_LABEL_INDEX).map(|tweak| LabelTweak {
             tweak,
             label: Label::Change,
@@ -95,9 +95,9 @@ impl LabelTweak {
     /// <i>hash<sub>BIP0352/Label</sub>(ser<sub>256</sub>(b<sub>scan</sub>) || ser<sub>32</sub>(m))·G</i>
     /// for secret key <i>b<sub>scan</sub></i>. The result can be then added to public <i>B<sub>scan</sub></i>
     /// to form <i>B<sub>m</sub></i>, the spending part of Silent Payment address.
-    fn label_tweak(b_scan: &SecretKey, m: u32) -> Result<Scalar, OutOfRangeError> {
+    fn label_tweak(b_scan: &ScanSecretKey, m: u32) -> Result<Scalar, OutOfRangeError> {
         let mut engine = LabelTag::engine();
-        engine.input(&b_scan.secret_bytes());
+        engine.input(&b_scan.to_secret_key().secret_bytes());
         engine.input(&m.to_be_bytes());
         Scalar::from_be_bytes(LabelHash::from_engine(engine).to_byte_array())
     }

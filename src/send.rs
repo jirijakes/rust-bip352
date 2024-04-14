@@ -133,32 +133,23 @@ impl<'a> SilentPayment<'a> {
             let input_secret_key = self.input_secret_key.get().unwrap();
 
             // scan_key -> spend_keys
-            let mut groups: HashMap<PublicKey, Vec<(usize, PublicKey)>> = HashMap::new();
+            let mut groups: HashMap<PublicKey, Vec<PublicKey>> = HashMap::new();
 
-            // Enumerate to preserve order.
-            self.recipients.iter().enumerate().for_each(|(index, r)| {
-                groups
-                    .entry(r.scan_key())
-                    .or_default()
-                    .push((index, r.spend_key()));
+            self.recipients.iter().for_each(|r| {
+                groups.entry(r.scan_key()).or_default().push(r.spend_key());
             });
 
-            // TODO: Is ordering needed?
-            let mut x: Vec<(usize, ScriptBuf)> = groups
+            groups
                 .into_iter()
                 .flat_map(|(b_scan, b_ms)| {
                     let shared_secret =
                         SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp).unwrap();
 
-                    b_ms.into_iter().zip(0..).map(move |((index, b_m), k)| {
-                        (index, shared_secret.destination_output(b_m, k, self.secp))
-                    })
+                    b_ms.into_iter()
+                        .zip(0..)
+                        .map(move |(b_m, k)| shared_secret.destination_output(b_m, k, self.secp))
                 })
-                .collect();
-
-            x.sort_by_key(|(index, _)| *index);
-
-            x.into_iter().map(|(_, script)| script).collect()
+                .collect()
         } else {
             vec![]
         }

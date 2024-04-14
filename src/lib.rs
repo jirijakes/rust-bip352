@@ -203,10 +203,20 @@ impl<K> Default for Aggregate<K> {
     }
 }
 
-#[derive(Debug)]
+/// ECDH shared secret serialized as compressed public key.
 pub struct SharedSecret([u8; 33]);
 
 impl SharedSecret {
+    /// Creates new ECDH shared secret from an input hash, a public key and a secret key.
+    ///
+    /// ### Under the hood
+    /// - input hash is derived from inputs equally for both sending and scanning
+    /// - when sending, public key is address's public scan key; when scanning, public key is aggregated public key of inputs
+    /// - when sending, secret key key is aggregated secret key of inputs; when scanning, secret key is address's secret scan key
+    ///
+    /// # Errors
+    ///
+    /// Fails when any operation results in a value that would not be a valid key.
     pub fn new<C: Verification>(
         input_hash: Scalar,
         public_key: PublicKey,

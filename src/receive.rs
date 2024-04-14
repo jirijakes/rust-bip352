@@ -2,17 +2,20 @@ use std::collections::{HashMap, HashSet};
 
 use bitcoin::secp256k1::scalar::OutOfRangeError;
 use bitcoin::secp256k1::{
-    All, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification, XOnlyPublicKey,
+    All, Parity, PublicKey, Scalar, Secp256k1, Signing, Verification, XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, Transaction, TxOut};
 
 use crate::address::SilentPaymentAddress;
 use crate::label::{Label, LabelIndex, LabelTweak};
-use crate::{input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput};
+use crate::{
+    input_public_key, Aggregate, InputHash, ScanSecretKey, SharedSecret, SilentPaymentOutput,
+    SpendPublicKey,
+};
 
 struct Key {
-    scan_key: SecretKey,
-    spend_key: PublicKey,
+    scan_key: ScanSecretKey,
+    spend_key: SpendPublicKey,
     labels: Vec<LabelTweak>,
     change_label: LabelTweak,
 }
@@ -22,7 +25,11 @@ pub struct Receive {
 }
 
 impl Receive {
-    pub fn new(scan_key: SecretKey, spend_key: PublicKey, labels: Vec<LabelIndex>) -> Self {
+    pub fn new(
+        scan_key: ScanSecretKey,
+        spend_key: SpendPublicKey,
+        labels: Vec<LabelIndex>,
+    ) -> Self {
         let labels: Result<Vec<LabelTweak>, OutOfRangeError> = labels
             .into_iter()
             .map(|m| LabelTweak::from_index(&scan_key, m))
@@ -205,7 +212,8 @@ impl<'a> Scanner<'a> {
         labels.insert(change_label.to_public_key(secp), Label::Change);
 
         let shared_secret =
-            SharedSecret::new(input_hash, input_public_key, *scan_key, secp).unwrap();
+            SharedSecret::new(input_hash, input_public_key, scan_key.to_secret_key(), secp)
+                .unwrap();
 
         outputs
             .iter()

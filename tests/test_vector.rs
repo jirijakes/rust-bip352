@@ -34,7 +34,7 @@ fn bip352_test_vector() {
 fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
     use std::collections::HashSet;
 
-    use bip352::{label::LabelIndex, receive::Receive};
+    use bip352::{label::LabelIndex, receive::Receive, ScanSecretKey, SpendPublicKey};
 
     receiving.iter().for_each(|r| {
         let spend_key =
@@ -42,9 +42,11 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
                 .unwrap();
 
         let receive = Receive::new(
-            SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.scan_priv_key).unwrap())
-                .unwrap(),
-            spend_key.public_key(secp),
+            ScanSecretKey::new(
+                SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.scan_priv_key).unwrap())
+                    .unwrap(),
+            ),
+            SpendPublicKey::new(spend_key.public_key(secp)),
             r.given
                 .labels
                 .iter()
@@ -175,16 +177,19 @@ fn test_spending(
     test: &str,
     secp: &Secp256k1<All>,
 ) {
-    use bip352::spend;
+    use bip352::{spend, ScanSecretKey, SpendSecretKey};
 
-    let spend_key = SecretKey::from_slice(
-        &Vec::from_hex(&receiving.given.key_material.spend_priv_key).unwrap(),
-    )
-    .unwrap();
+    let spend_key = SpendSecretKey::new(
+        SecretKey::from_slice(
+            &Vec::from_hex(&receiving.given.key_material.spend_priv_key).unwrap(),
+        )
+        .unwrap(),
+    );
 
-    let scan_key =
+    let scan_key = ScanSecretKey::new(
         SecretKey::from_slice(&Vec::from_hex(&receiving.given.key_material.scan_priv_key).unwrap())
-            .unwrap();
+            .unwrap(),
+    );
 
     receiving.expected.outputs.iter().for_each(|o| {
         let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();

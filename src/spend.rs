@@ -1,10 +1,10 @@
-use bitcoin::secp256k1::{Error as SecpError, Keypair, Scalar, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{Error as SecpError, Keypair, Scalar, Secp256k1};
 
-use crate::label::Label;
+use crate::{label::Label, ScanSecretKey, SpendSecretKey};
 
 pub fn signing_keypair(
-    spend_key: SecretKey,
-    scan_key: SecretKey,
+    spend_key: SpendSecretKey,
+    scan_key: ScanSecretKey,
     tweak: Scalar,
     label: Option<Label>,
 ) -> Result<Keypair, SecpError> {
@@ -17,5 +17,5 @@ pub fn signing_keypair(
         spend_key.add_tweak(&tweak)?
     };
 
-    Ok(Keypair::from_secret_key(secp, &signing_key))
+    Ok(signing_key.to_keypair(secp))
 }

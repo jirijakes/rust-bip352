@@ -5,7 +5,8 @@ use bitcoin::hashes::sha256t::Tag;
 use bitcoin::hashes::{hash160, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
-    Parity, PublicKey, Scalar, Secp256k1, SecretKey, Verification, XOnlyPublicKey,
+    Error as SecpError, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Verification,
+    XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
 use label::Label;
@@ -208,12 +209,16 @@ pub struct SharedSecret([u8; 33]);
 impl SharedSecret {
     pub fn new<C: Verification>(
         input_hash: Scalar,
-        pk: PublicKey,
-        sk: SecretKey,
+        public_key: PublicKey,
+        secret_key: SecretKey,
         secp: &Secp256k1<C>,
-    ) -> SharedSecret {
-        let ecdh = sk.mul_tweak(&input_hash).unwrap();
-        SharedSecret(pk.mul_tweak(secp, &ecdh.into()).unwrap().serialize())
+    ) -> Result<SharedSecret, SecpError> {
+        Ok(SharedSecret(
+            public_key
+                .mul_tweak(secp, &secret_key.into())?
+                .mul_tweak(secp, &input_hash)?
+                .serialize(),
+        ))
     }
 
     pub fn destination_output<C: Verification>(

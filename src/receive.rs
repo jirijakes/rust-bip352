@@ -204,7 +204,8 @@ impl<'a> Scanner<'a> {
 
         labels.insert(change_label.to_public_key(secp), Label::Change);
 
-        let shared_secret = SharedSecret::new(input_hash, input_public_key, *scan_key, secp);
+        let shared_secret =
+            SharedSecret::new(input_hash, input_public_key, *scan_key, secp).unwrap();
 
         outputs
             .iter()

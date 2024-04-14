@@ -148,7 +148,7 @@ impl<'a> SilentPayment<'a> {
                 .into_iter()
                 .flat_map(|(b_scan, b_ms)| {
                     let shared_secret =
-                        SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp);
+                        SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp).unwrap();
 
                     b_ms.into_iter().zip(0..).map(move |((index, b_m), k)| {
                         (index, shared_secret.destination_output(b_m, k, self.secp))

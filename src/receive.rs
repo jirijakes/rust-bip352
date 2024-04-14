@@ -9,11 +9,12 @@ use bitcoin::{OutPoint, Script, Transaction, TxOut};
 use crate::address::SilentPaymentAddress;
 use crate::label::{Label, LabelIndex, LabelTweak};
 use crate::{
-    input_public_key, Aggregate, InputHash, SharedSecret, SilentPaymentOutput, SpendPublicKey,
+    input_public_key, Aggregate, InputHash, ScanSecretKey, SharedSecret, SilentPaymentOutput,
+    SpendPublicKey,
 };
 
 struct Key {
-    scan_key: SecretKey,
+    scan_key: ScanSecretKey,
     spend_key: SpendPublicKey,
     labels: Vec<LabelTweak>,
     change_label: LabelTweak,
@@ -31,7 +32,7 @@ impl Receive {
             .collect();
         let change_label = LabelTweak::change(&scan_key).unwrap();
         let key = Key {
-            scan_key,
+            scan_key: ScanSecretKey(scan_key),
             spend_key: SpendPublicKey(spend_key),
             labels: labels.unwrap(),
             change_label,
@@ -207,7 +208,8 @@ impl<'a> Scanner<'a> {
         labels.insert(change_label.to_public_key(secp), Label::Change);
 
         let shared_secret =
-            SharedSecret::new(input_hash, input_public_key, *scan_key, secp).unwrap();
+            SharedSecret::new(input_hash, input_public_key, scan_key.to_secret_key(), secp)
+                .unwrap();
 
         outputs
             .iter()

@@ -4,7 +4,7 @@ use bech32::primitives::decode::UncheckedHrpstring;
 use bech32::{Bech32m, ByteIterExt, Fe32, Fe32IterExt, Hrp};
 use bitcoin::secp256k1::PublicKey;
 
-use crate::SpendPublicKey;
+use crate::{ScanPublicKey, SpendPublicKey};
 
 /// Human-readable part for encoded address on mainnet.
 const HRP: Hrp = Hrp::parse_unchecked("sp");
@@ -16,12 +16,12 @@ const THRP: Hrp = Hrp::parse_unchecked("tsp");
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SilentPaymentAddress {
     spend_key: SpendPublicKey,
-    scan_key: PublicKey,
+    scan_key: ScanPublicKey,
 }
 
 impl SilentPaymentAddress {
     /// Creates new Silent Payment Address from given spend key and scan key.
-    pub fn new(spend_key: SpendPublicKey, scan_key: PublicKey) -> Self {
+    pub fn new(spend_key: SpendPublicKey, scan_key: ScanPublicKey) -> Self {
         Self {
             spend_key,
             scan_key,
@@ -48,7 +48,7 @@ impl SilentPaymentAddress {
             let (scan_data, spend_data) = data.split_at(33);
             Ok(SilentPaymentAddress::new(
                 SpendPublicKey(PublicKey::from_slice(spend_data).unwrap()),
-                PublicKey::from_slice(scan_data).unwrap(),
+                ScanPublicKey(PublicKey::from_slice(scan_data).unwrap()),
             ))
         } else {
             Err(DecodeError::InvalidLength)?
@@ -76,7 +76,7 @@ impl SilentPaymentAddress {
     }
 
     /// Returns scan key of this address.
-    pub fn scan_key(&self) -> PublicKey {
+    pub fn scan_key(&self) -> ScanPublicKey {
         self.scan_key
     }
 }

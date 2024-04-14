@@ -47,11 +47,11 @@
 //! ```
 use std::collections::HashMap;
 
-use bitcoin::secp256k1::{All, Parity, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{All, Parity, Secp256k1, SecretKey};
 use bitcoin::{OutPoint, ScriptBuf};
 
 use crate::address::SilentPaymentAddress;
-use crate::{Aggregate, InputHash, SharedSecret, SpendPublicKey};
+use crate::{Aggregate, InputHash, ScanPublicKey, SharedSecret, SpendPublicKey};
 
 pub struct SilentPayment<'a> {
     recipients: Vec<SilentPaymentAddress>,
@@ -133,7 +133,7 @@ impl<'a> SilentPayment<'a> {
             let input_secret_key = self.input_secret_key.get().unwrap();
 
             // scan_key -> spend_keys
-            let mut groups: HashMap<PublicKey, Vec<SpendPublicKey>> = HashMap::new();
+            let mut groups: HashMap<ScanPublicKey, Vec<SpendPublicKey>> = HashMap::new();
 
             self.recipients.iter().for_each(|r| {
                 groups.entry(r.scan_key()).or_default().push(r.spend_key());
@@ -142,8 +142,13 @@ impl<'a> SilentPayment<'a> {
             groups
                 .into_iter()
                 .flat_map(|(b_scan, b_ms)| {
-                    let shared_secret =
-                        SharedSecret::new(input_hash, b_scan, input_secret_key, self.secp).unwrap();
+                    let shared_secret = SharedSecret::new(
+                        input_hash,
+                        b_scan.into_public_key(),
+                        input_secret_key,
+                        self.secp,
+                    )
+                    .unwrap();
 
                     b_ms.into_iter()
                         .zip(0..)

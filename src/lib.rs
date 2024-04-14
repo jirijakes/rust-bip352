@@ -5,7 +5,7 @@ use bitcoin::hashes::sha256t::Tag;
 use bitcoin::hashes::{hash160, sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::key::TapTweak;
 use bitcoin::secp256k1::{
-    Error as SecpError, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Verification,
+    Error as SecpError, Parity, PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification,
     XOnlyPublicKey,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, TxIn};
@@ -49,8 +49,31 @@ impl SpendPublicKey {
 }
 
 pub struct SpendSecretKey(SecretKey);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ScanPublicKey(PublicKey);
+
+impl ScanPublicKey {
+    pub fn serialize(&self) -> [u8; 33] {
+        self.0.serialize()
+    }
+
+    pub fn into_public_key(self) -> PublicKey {
+        self.0
+    }
+}
+
 pub struct ScanSecretKey(SecretKey);
+
+impl ScanSecretKey {
+    pub fn public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> ScanPublicKey {
+        ScanPublicKey(self.0.public_key(secp))
+    }
+
+    pub fn to_secret_key(&self) -> SecretKey {
+        self.0
+    }
+}
 
 /// An output that has been detected as a Silent Payment together with
 /// all data that are needed to spend it. Wallets should index this.

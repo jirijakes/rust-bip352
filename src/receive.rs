@@ -111,10 +111,6 @@ impl<'a> Scanner<'a> {
         self
     }
 
-    pub fn add_xonly_public_key(&mut self, key: &XOnlyPublicKey) -> &mut Self {
-        self.add_public_key(&key.public_key(Parity::Even))
-    }
-
     /// Adds script of a transaction output, if eligibile, to be examined
     /// whether it is an output of a Silent Payment. Only taproot outputs are
     /// considered, other output types are ignored.

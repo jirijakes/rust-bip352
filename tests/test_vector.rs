@@ -56,7 +56,7 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
 
         let expected_addresses: HashSet<String> = r.expected.addresses.iter().cloned().collect();
         let given_addresses: HashSet<String> = receive
-            .addresses(secp)
+            .addresses()
             .iter()
             .map(|spa| spa.to_bech32(false))
             .collect();

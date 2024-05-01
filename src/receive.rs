@@ -239,36 +239,45 @@ impl<'a> Scanner<'a> {
             SharedSecret::new(input_hash, input_public_key, scan_key.to_secret_key(), secp)
                 .unwrap();
 
-        outputs
-            .iter()
-            .fold((HashSet::new(), 0u32), |(mut acc, k), &output| {
-                let (pk, tk) = shared_secret.destination_public_key(*spend_key, k, secp);
+        let mut outputs: HashSet<PublicKey> = outputs.iter().copied().collect();
 
-                let next_output = if output == pk {
-                    Some(SilentPaymentOutput::new(output.x_only_public_key().0, tk))
-                } else {
-                    [output, output.negate(secp)]
-                        .iter()
-                        .filter_map(|x| x.combine(&pk.negate(secp)).ok())
-                        .find_map(|x| labels.get_key_value(&x))
-                        .and_then(|(x, label)| {
-                            x.combine(&pk).ok().map(|x| {
-                                SilentPaymentOutput::new_with_label(
-                                    x.x_only_public_key().0,
-                                    tk,
-                                    *label,
-                                )
-                            })
-                        })
-                };
+        let mut xxx: HashSet<SilentPaymentOutput> = Default::default();
 
-                if let Some(out) = next_output {
-                    acc.insert(out);
-                    (acc, k + 1)
-                } else {
-                    (acc, k)
-                }
-            })
-            .0
+        let mut k = 0u32;
+
+        let (pk, tk) = shared_secret.destination_public_key(*spend_key, k, secp);
+
+        let z = if let Some(x) = outputs.get(&pk) {
+            xxx.insert(SilentPaymentOutput::new(x.x_only_public_key().0, tk));
+            k += 1;
+            Some(*x)
+        } else if let Some((a, b)) = outputs.iter().find_map(|output| {
+            [output, &output.negate(secp)]
+                .iter()
+                .filter_map(|output| output.combine(&pk.negate(secp)).ok())
+                .find_map(|x| labels.get_key_value(&x))
+                .and_then(|(x, label)| {
+                    x.combine(&pk).ok().map(|x| {
+                        let spo = SilentPaymentOutput::new_with_label(
+                            x.x_only_public_key().0,
+                            tk,
+                            *label,
+                        );
+                        (spo, output)
+                    })
+                })
+        }) {
+            xxx.insert(a);
+            k += 1;
+            Some(*b)
+        } else {
+            None
+        };
+
+        if let Some(z) = z {
+            outputs.remove(&z);
+        }
+
+        xxx
     }
 }

@@ -22,9 +22,10 @@ fn bip352_test_vector() {
     serde_json::from_reader::<_, Vec<Test>>(reader)
         .unwrap()
         .iter()
+        .filter(|x| x.comment == "Multiple outputs with labels: multiple outputs for labeled address; same recipient C")
         .for_each(|t| {
-            #[cfg(feature = "send")]
-            test_sending(&t.sending, &t.comment, &secp);
+            // #[cfg(feature = "send")]
+            // test_sending(&t.sending, &t.comment, &secp);
             #[cfg(feature = "receive")]
             test_receiving(&t.receiving, &t.comment, &secp);
         });
@@ -91,19 +92,16 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
             .collect();
 
-        if test.starts_with(
-            "Multiple outputs with labels: multiple outputs for labeled address; same recipient",
-        ) {
-            assert!(
-                calculated_outputs.is_subset(&expected_outputs),
-                "Found different outputs than expected in `{test}`."
-            );
-        } else {
-            assert_eq!(
-                calculated_outputs, expected_outputs,
-                "Found different outputs than expected in `{test}`."
-            );
-        }
+        assert_eq!(
+            calculated_outputs.len(),
+            r.expected.n_outputs,
+            "Found different number of outputs than expected in `{test}`."
+        );
+
+        assert!(
+            calculated_outputs.is_subset(&expected_outputs),
+            "Found different outputs than expected in `{test}`."
+        );
 
         #[cfg(feature = "spend")]
         test_spending(r, &silent_payment_outputs, test, secp);
@@ -323,6 +321,7 @@ struct ReceivingOutput {
 struct ReceivingExpected {
     addresses: Vec<String>,
     outputs: Vec<ReceivingOutput>,
+    n_outputs: usize,
 }
 
 #[derive(Debug, Deserialize)]

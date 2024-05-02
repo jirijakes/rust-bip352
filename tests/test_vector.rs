@@ -91,19 +91,16 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
             .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
             .collect();
 
-        if test.starts_with(
-            "Multiple outputs with labels: multiple outputs for labeled address; same recipient",
-        ) {
-            assert!(
-                calculated_outputs.is_subset(&expected_outputs),
-                "Found different outputs than expected in `{test}`."
-            );
-        } else {
-            assert_eq!(
-                calculated_outputs, expected_outputs,
-                "Found different outputs than expected in `{test}`."
-            );
-        }
+        assert_eq!(
+            calculated_outputs.len(),
+            r.expected.n_outputs,
+            "Found different number of outputs than expected in `{test}`."
+        );
+
+        assert!(
+            calculated_outputs.is_subset(&expected_outputs),
+            "Found different outputs than expected in `{test}`."
+        );
 
         #[cfg(feature = "spend")]
         test_spending(r, &silent_payment_outputs, test, secp);
@@ -177,6 +174,8 @@ fn test_spending(
     test: &str,
     secp: &Secp256k1<All>,
 ) {
+    use std::collections::HashSet;
+
     use bip352::{spend, ScanSecretKey, SpendSecretKey};
 
     let spend_key = SpendSecretKey::new(
@@ -191,34 +190,51 @@ fn test_spending(
             .unwrap(),
     );
 
-    receiving.expected.outputs.iter().for_each(|o| {
-        let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
+    let expected_signatures: HashSet<_> = receiving
+        .expected
+        .outputs
+        .iter()
+        .map(|o| o.signature.clone())
+        .collect();
 
-        if let Some(spo) = silent_payment_outputs
-            .iter()
-            .find(|o| o.public_key() == public_key)
-        {
-            let keypair =
-                spend::signing_keypair(spend_key, scan_key, spo.tweak(), spo.label()).unwrap();
+    let calculated_signatures: HashSet<_> = receiving
+        .expected
+        .outputs
+        .iter()
+        .filter_map(|o| {
+            let public_key =
+                XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
 
-            let msg = Message::from_digest(
-                sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),
-            );
-            let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
-                .to_byte_array();
+            silent_payment_outputs
+                .iter()
+                .find(|o| o.public_key() == public_key)
+                .map(|spo| {
+                    let keypair =
+                        spend::signing_keypair(spend_key, scan_key, spo.tweak(), spo.label())
+                            .unwrap();
 
-            let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
-            assert_eq!(
-                hex::encode(sig.as_ref()),
-                o.signature,
-                "Signatures are not the same in '{test}'."
-            );
-        } else if !test.starts_with(
-            "Multiple outputs with labels: multiple outputs for labeled address; same recipient",
-        ) {
-            panic!("Output {public_key} not found in `{test}`.")
-        }
-    });
+                    let msg = Message::from_digest(
+                        sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),
+                    );
+                    let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
+                        .to_byte_array();
+
+                    let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
+
+                    hex::encode(sig.as_ref())
+                })
+        })
+        .collect();
+
+    assert_eq!(
+        receiving.expected.n_outputs,
+        calculated_signatures.len(),
+        "Number of calcuated signatures does not match the expected number in '{test}'"
+    );
+    assert!(
+        calculated_signatures.is_subset(&expected_signatures),
+        "Some calculated signatures are missing in '{test}'"
+    );
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,6 +339,7 @@ struct ReceivingOutput {
 struct ReceivingExpected {
     addresses: Vec<String>,
     outputs: Vec<ReceivingOutput>,
+    n_outputs: usize,
 }
 
 #[derive(Debug, Deserialize)]

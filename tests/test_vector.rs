@@ -22,10 +22,9 @@ fn bip352_test_vector() {
     serde_json::from_reader::<_, Vec<Test>>(reader)
         .unwrap()
         .iter()
-        .filter(|x| x.comment == "Multiple outputs with labels: multiple outputs for labeled address; same recipient C")
         .for_each(|t| {
-            // #[cfg(feature = "send")]
-            // test_sending(&t.sending, &t.comment, &secp);
+            #[cfg(feature = "send")]
+            test_sending(&t.sending, &t.comment, &secp);
             #[cfg(feature = "receive")]
             test_receiving(&t.receiving, &t.comment, &secp);
         });
@@ -175,6 +174,8 @@ fn test_spending(
     test: &str,
     secp: &Secp256k1<All>,
 ) {
+    use std::collections::HashSet;
+
     use bip352::{spend, ScanSecretKey, SpendSecretKey};
 
     let spend_key = SpendSecretKey::new(
@@ -189,34 +190,51 @@ fn test_spending(
             .unwrap(),
     );
 
-    receiving.expected.outputs.iter().for_each(|o| {
-        let public_key = XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
+    let expected_signatures: HashSet<_> = receiving
+        .expected
+        .outputs
+        .iter()
+        .map(|o| o.signature.clone())
+        .collect();
 
-        if let Some(spo) = silent_payment_outputs
-            .iter()
-            .find(|o| o.public_key() == public_key)
-        {
-            let keypair =
-                spend::signing_keypair(spend_key, scan_key, spo.tweak(), spo.label()).unwrap();
+    let calculated_signatures: HashSet<_> = receiving
+        .expected
+        .outputs
+        .iter()
+        .filter_map(|o| {
+            let public_key =
+                XOnlyPublicKey::from_slice(&Vec::from_hex(&o.pub_key).unwrap()).unwrap();
 
-            let msg = Message::from_digest(
-                sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),
-            );
-            let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
-                .to_byte_array();
+            silent_payment_outputs
+                .iter()
+                .find(|o| o.public_key() == public_key)
+                .map(|spo| {
+                    let keypair =
+                        spend::signing_keypair(spend_key, scan_key, spo.tweak(), spo.label())
+                            .unwrap();
 
-            let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
-            assert_eq!(
-                hex::encode(sig.as_ref()),
-                o.signature,
-                "Signatures are not the same in '{test}'."
-            );
-        } else if !test.starts_with(
-            "Multiple outputs with labels: multiple outputs for labeled address; same recipient",
-        ) {
-            panic!("Output {public_key} not found in `{test}`.")
-        }
-    });
+                    let msg = Message::from_digest(
+                        sha256::Hash::hash(&"message".to_string().into_bytes()).to_byte_array(),
+                    );
+                    let aux = sha256::Hash::hash(&"random auxiliary data".to_string().into_bytes())
+                        .to_byte_array();
+
+                    let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux);
+
+                    hex::encode(sig.as_ref())
+                })
+        })
+        .collect();
+
+    assert_eq!(
+        receiving.expected.n_outputs,
+        calculated_signatures.len(),
+        "Number of calcuated signatures does not match the expected number in '{test}'"
+    );
+    assert!(
+        calculated_signatures.is_subset(&expected_signatures),
+        "Some calculated signatures are missing in '{test}'"
+    );
 }
 
 #[derive(Debug, Deserialize)]

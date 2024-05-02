@@ -239,46 +239,43 @@ impl<'a> Scanner<'a> {
             SharedSecret::new(input_hash, input_public_key, scan_key.to_secret_key(), secp)
                 .unwrap();
 
-        (0u32..)
-            .scan(
-                outputs.iter().copied().collect::<HashSet<_>>(),
-                |outputs, k| {
-                    let (pk, tk) = shared_secret.destination_public_key(*spend_key, k, secp);
+        let outputs: HashSet<PublicKey> = outputs.iter().copied().collect();
 
-                    let z = if let Some(output) = outputs.get(&pk) {
-                        Some((
-                            *output,
-                            SilentPaymentOutput::new(output.x_only_public_key().0, tk),
-                        ))
-                    } else if let Some((a, b)) = outputs.iter().find_map(|output| {
-                        [output, &output.negate(secp)]
+        (0u32..)
+            .scan(outputs, |outputs, k| {
+                let (pk, tk) = shared_secret.destination_public_key(*spend_key, k, secp);
+
+                let unlabeled = outputs.get(&pk).map(|&output| {
+                    let spo = SilentPaymentOutput::new(output.x_only_public_key().0, tk);
+                    (output, spo)
+                });
+
+                let check_labeled = || {
+                    outputs.iter().find_map(|output_orig| {
+                        [output_orig, &output_orig.negate(secp)]
                             .iter()
                             .filter_map(|output| output.combine(&pk.negate(secp)).ok())
-                            .find_map(|x| labels.get_key_value(&x))
-                            .and_then(|(x, label)| {
-                                x.combine(&pk).ok().map(|x| {
+                            .find_map(|output| labels.get_key_value(&output))
+                            .and_then(|(output, label)| {
+                                output.combine(&pk).ok().map(|x| {
                                     let spo = SilentPaymentOutput::new_with_label(
                                         x.x_only_public_key().0,
                                         tk,
                                         *label,
                                     );
-                                    (spo, output)
+                                    (*output_orig, spo)
                                 })
                             })
-                    }) {
-                        Some((*b, a))
-                    } else {
-                        None
-                    };
+                    })
+                };
 
-                    if let Some((a, b)) = z {
-                        outputs.remove(&a);
-                        Some(b)
-                    } else {
-                        None
-                    }
-                },
-            )
+                unlabeled
+                    .or_else(check_labeled)
+                    .inspect(|(output, _)| {
+                        outputs.remove(output);
+                    })
+                    .map(|(_, spo)| spo)
+            })
             .collect()
     }
 }

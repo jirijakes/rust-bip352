@@ -15,15 +15,15 @@ receive = []
 spend = []
 
 [dependencies]
-bitcoin = { version = "0.31", features = ["serde"] }
+bitcoin = { version = "0.32", features = ["serde"] }
 bech32 = "0.11"
 
 [dev-dependencies]
-bitcoind = "0.33"
-miniscript = "10.0.0"
+bitcoind = "0.36"
+miniscript = { git = "https://github.com/rust-bitcoin/rust-miniscript/" }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
 hex = "0.4"
 rand = "0.8.5"
-secp256k1 = { version = "0.28", features = ["rand"] }
+secp256k1 = { version = "0.29", features = ["rand"] }
 proptest = "1"

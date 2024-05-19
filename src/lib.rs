@@ -64,6 +64,14 @@ impl SpendSecretKey {
         self.0.add_tweak(tweak).map(SpendSecretKey)
     }
 
+    pub fn public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> SpendPublicKey {
+        SpendPublicKey(self.0.public_key(secp))
+    }
+
+    pub fn to_secret_key(&self) -> SecretKey {
+        self.0
+    }
+
     pub fn to_keypair<C: Signing>(&self, secp: &Secp256k1<C>) -> Keypair {
         Keypair::from_secret_key(secp, &self.0)
     }
@@ -73,6 +81,10 @@ impl SpendSecretKey {
 pub struct ScanPublicKey(PublicKey);
 
 impl ScanPublicKey {
+    pub fn new(public_key: PublicKey) -> Self {
+        Self(public_key)
+    }
+
     pub fn serialize(&self) -> [u8; 33] {
         self.0.serialize()
     }

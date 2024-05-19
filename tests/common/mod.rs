@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::bip32::{DerivationPath, ExtendedPrivKey, Fingerprint};
+use bitcoin::bip32::{DerivationPath, Fingerprint, Xpriv};
 use bitcoin::secp256k1::{All, Secp256k1, SecretKey};
 use miniscript::descriptor::{DescriptorSecretKey, ShInner};
 use miniscript::{Descriptor, DescriptorPublicKey};
@@ -23,7 +23,7 @@ pub struct GetAddress {
 }
 
 pub struct PrivateKeys<'a> {
-    pub keys: HashMap<Fingerprint, ExtendedPrivKey>,
+    pub keys: HashMap<Fingerprint, Xpriv>,
     pub secp: &'a Secp256k1<All>,
 }
 
@@ -39,7 +39,7 @@ impl<'a> PrivateKeys<'a> {
 pub fn collect_xprivs(
     secp: &Secp256k1<All>,
     descs: &[ListDescriptorsDescriptor],
-) -> HashMap<Fingerprint, ExtendedPrivKey> {
+) -> HashMap<Fingerprint, Xpriv> {
     descs
         .iter()
         .filter_map(|d| Descriptor::parse_descriptor(secp, &d.desc).ok())

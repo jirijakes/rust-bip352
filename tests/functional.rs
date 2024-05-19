@@ -1,13 +1,13 @@
-/*use std::collections::HashMap;
+use std::collections::HashMap;
 
 use bip352::address::SilentPaymentAddress;
 use bip352::receive::Receive;
 use bip352::send::SilentPayment;
-use bip352::spend;
-use bitcoin::bip32::{ChildNumber, ExtendedPrivKey};
+use bip352::{spend, ScanSecretKey, SpendSecretKey};
+use bitcoin::bip32::{ChildNumber, Xpriv};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::key::TapTweak;
-use bitcoin::secp256k1::{KeyPair, Secp256k1};
+use bitcoin::secp256k1::{Keypair, Secp256k1};
 use bitcoin::{Address, OutPoint, PrivateKey, TxOut};
 use bitcoind::bitcoincore_rpc::bitcoin::{Amount, Network};
 use bitcoind::bitcoincore_rpc::bitcoincore_rpc_json::{AddressType, CreateRawTransactionInput};
@@ -23,23 +23,23 @@ mod common;
 
 #[test]
 #[rustfmt::skip]
-fn test_me() {
+fn functional_test() {
     let secp = Secp256k1::new();
 
     //
     // Receiver
     //
 
-    let xpriv = ExtendedPrivKey::new_master(Network::Regtest, &random::<[u8; 32]>()).unwrap();
+    let xpriv = Xpriv::new_master(Network::Regtest, &random::<[u8; 32]>()).unwrap();
     println!("Extended master key: {}", xpriv);
 
     let scan_keys = xpriv.derive_priv(&secp, &[ChildNumber::Hardened { index: 352 }, ChildNumber::Hardened { index: 1 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 1 }]).unwrap();
-    let scan_key = scan_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key;
-    println!("Scan secret key: {}", scan_key.display_secret());
+    let scan_key = ScanSecretKey::new(scan_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key);
+    println!("Scan secret key: {}", scan_key.to_secret_key().display_secret());
 
     let spend_keys = xpriv.derive_priv(&secp, &[ChildNumber::Hardened { index: 352 }, ChildNumber::Hardened { index: 1 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 0 }]).unwrap();
-    let spend_key = spend_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key;
-    println!("Spend secret key: {}", spend_key.display_secret());
+    let spend_key = SpendSecretKey::new(spend_keys.derive_priv(&secp, &[ChildNumber::Normal { index: 0 }]).unwrap().private_key);
+    println!("Spend secret key: {}", spend_key.to_secret_key().display_secret());
 
     let client = {
         let mut conf = bitcoind::Conf::default();
@@ -53,7 +53,7 @@ fn test_me() {
 
     let mut silent_payment = SilentPayment::new(&secp);
     let spaddress = SilentPaymentAddress::new(spend_key.public_key(&secp), scan_key.public_key(&secp));
-    println!("Silent payment address: {}", spaddress);
+    println!("Silent payment address: {}", spaddress.to_bech32(true));
 
     silent_payment.add_recipient(spaddress);
 
@@ -72,7 +72,7 @@ fn test_me() {
     let tx1 = client.get_transaction(&tx1, None).unwrap().transaction().unwrap();
     println!("Transaction for input 1: {}", serialize_hex(&tx1));
     let out1 = tx1.output.iter().position(|o| o.script_pubkey == addr1.script_pubkey()).unwrap() as u32;
-    silent_payment.add_outpoint(OutPoint::new(tx1.txid(), out1));
+    silent_payment.add_outpoint(OutPoint::new(tx1.compute_txid(), out1));
     let (desc1, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr1.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc1) {
         silent_payment.add_private_key(sec);
@@ -85,10 +85,10 @@ fn test_me() {
     let tx2 = client.get_transaction(&tx2, None).unwrap().transaction().unwrap();
     println!("Transaction for input 2: {}", serialize_hex(&tx2));
     let out2 = tx2.output.iter().position(|o| o.script_pubkey == addr2.script_pubkey()).unwrap() as u32;
-    silent_payment.add_outpoint(OutPoint::new(tx2.txid(), out2));
+    silent_payment.add_outpoint(OutPoint::new(tx2.compute_txid(), out2));
     let (desc2, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr2.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc2) {
-        let sec = KeyPair::from_secret_key(&secp, &sec).tap_tweak(&secp, None).to_inner();
+        let sec = Keypair::from_secret_key(&secp, &sec).tap_tweak(&secp, None).to_inner();
         silent_payment.add_taproot_private_key(sec);
     }
 
@@ -99,7 +99,7 @@ fn test_me() {
     let tx3 = client.get_transaction(&tx3, None).unwrap().transaction().unwrap();
     println!("Transaction for input 3: {}", serialize_hex(&tx3));
     let out3 = tx3.output.iter().position(|o| o.script_pubkey == addr3.script_pubkey()).unwrap() as u32;
-    silent_payment.add_outpoint(OutPoint::new(tx3.txid(), out3));
+    silent_payment.add_outpoint(OutPoint::new(tx3.compute_txid(), out3));
     let (desc3, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr3.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc3) {
         silent_payment.add_private_key(sec);
@@ -112,7 +112,7 @@ fn test_me() {
     let tx4 = client.get_transaction(&tx4, None).unwrap().transaction().unwrap();
     println!("Transaction for input 4: {}", serialize_hex(&tx4));
     let out4 = tx4.output.iter().position(|o| o.script_pubkey == addr4.script_pubkey()).unwrap() as u32;
-    silent_payment.add_outpoint(OutPoint::new(tx4.txid(), out4));
+    silent_payment.add_outpoint(OutPoint::new(tx4.compute_txid(), out4));
     let (desc4, _) = Descriptor::parse_descriptor(&secp, &client.call::<common::GetAddress>("getaddressinfo", &[Value::String(addr4.to_string())]).unwrap().desc).unwrap();
     if let Some(sec) = keys.for_descriptor(&desc4) {
         silent_payment.add_private_key(sec);
@@ -132,10 +132,10 @@ fn test_me() {
     let tx = client
         .create_raw_transaction(
             &[
-                CreateRawTransactionInput { txid: tx1.txid(), vout: out1, sequence: None },
-                CreateRawTransactionInput { txid: tx2.txid(), vout: out2, sequence: None },
-                CreateRawTransactionInput { txid: tx3.txid(), vout: out3, sequence: None },
-                CreateRawTransactionInput { txid: tx4.txid(), vout: out4, sequence: None },
+                CreateRawTransactionInput { txid: tx1.compute_txid(), vout: out1, sequence: None },
+                CreateRawTransactionInput { txid: tx2.compute_txid(), vout: out2, sequence: None },
+                CreateRawTransactionInput { txid: tx3.compute_txid(), vout: out3, sequence: None },
+                CreateRawTransactionInput { txid: tx4.compute_txid(), vout: out4, sequence: None },
             ],
             &outputs,
             None,
@@ -168,18 +168,18 @@ fn test_me() {
 
     // Spend
 
-    let vout = tx.output.iter().position(|o| o.value == 10000000).unwrap() as u32;
+    let vout = tx.output.iter().position(|o| o.value.to_sat() == 10_000_000).unwrap() as u32;
     let addr4 = client.get_new_address(None, None).unwrap().require_network(Network::Regtest).unwrap();
     let spending_tx = client
         .create_raw_transaction(
-            &[CreateRawTransactionInput { txid: tx.txid(), vout, sequence: None }],
+            &[CreateRawTransactionInput { txid: tx.compute_txid(), vout, sequence: None }],
             &[(addr4.to_string(), Amount::from_btc(0.07).unwrap())].into_iter().collect(),
             None,
             None
         ).unwrap();
     let funded = client.fund_raw_transaction(&spending_tx, None, None).unwrap();
 
-    let keypair = spend::signing_keypair(spend_key, output.tweak(), output.label());
+    let keypair = spend::signing_keypair(spend_key, scan_key, output.tweak(), output.label()).unwrap();
     let signed = client
         .sign_raw_transaction_with_key(
             &funded.hex,
@@ -192,6 +192,5 @@ fn test_me() {
     client.generate_to_address(10, &addr).unwrap();
     let tx = client.get_raw_transaction_info(&txid, None).unwrap().transaction().unwrap();
 
-    assert!(tx.output.iter().any(|o| o.value == (0.07 * 1e8) as u64));
+    assert!(tx.output.iter().any(|o| o.value.to_sat() == (0.07 * 1e8) as u64));
 }
-*/

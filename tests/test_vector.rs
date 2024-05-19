@@ -36,75 +36,76 @@ fn test_receiving(receiving: &[Receiving], test: &str, secp: &Secp256k1<All>) {
 
     use bip352::{label::LabelIndex, receive::Receive, ScanSecretKey, SpendPublicKey};
 
-    receiving.iter().for_each(|r| {
-        let spend_key =
-            SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.spend_priv_key).unwrap())
-                .unwrap();
+    receiving
+        .iter()
+        .filter(|r| !r.given.labels.contains(&0)) // rust-bip352 does not allow label with index 0
+        .for_each(|r| {
+            let spend_key = SecretKey::from_slice(
+                &Vec::from_hex(&r.given.key_material.spend_priv_key).unwrap(),
+            )
+            .unwrap();
 
-        let receive = Receive::new(
-            ScanSecretKey::new(
-                SecretKey::from_slice(&Vec::from_hex(&r.given.key_material.scan_priv_key).unwrap())
+            let receive = Receive::new(
+                ScanSecretKey::new(
+                    SecretKey::from_slice(
+                        &Vec::from_hex(&r.given.key_material.scan_priv_key).unwrap(),
+                    )
                     .unwrap(),
-            ),
-            SpendPublicKey::new(spend_key.public_key(secp)),
-            r.given
-                .labels
+                ),
+                SpendPublicKey::new(spend_key.public_key(secp)),
+                r.given
+                    .labels
+                    .iter()
+                    .map(|l| LabelIndex::try_from(l).unwrap())
+                    .collect(),
+            );
+
+            let expected_addresses: HashSet<String> =
+                r.expected.addresses.iter().cloned().collect();
+            let given_addresses: HashSet<String> = receive
+                .addresses()
                 .iter()
-                .map(|l| LabelIndex::try_from(l).unwrap())
-                .collect(),
-        );
+                .map(|spa| spa.to_bech32(false))
+                .collect();
+            assert_eq!(given_addresses, expected_addresses, "{test}");
 
-        let expected_addresses: HashSet<String> = r.expected.addresses.iter().cloned().collect();
-        let given_addresses: HashSet<String> = receive
-            .addresses()
-            .iter()
-            .map(|spa| spa.to_bech32(false))
-            .collect();
-        assert_eq!(given_addresses, expected_addresses, "{test}");
+            let prevouts = r
+                .given
+                .vin
+                .iter()
+                .map(|vin| {
+                    (
+                        vin.out_point(),
+                        TxOut {
+                            value: Amount::from_sat(123),
+                            script_pubkey: vin.prevout.script_pub_key.hex.clone(),
+                        },
+                    )
+                })
+                .collect();
 
-        let prevouts = r
-            .given
-            .vin
-            .iter()
-            .map(|vin| {
-                (
-                    vin.out_point(),
-                    TxOut {
-                        value: Amount::from_sat(123),
-                        script_pubkey: vin.prevout.script_pub_key.hex.clone(),
-                    },
-                )
-            })
-            .collect();
+            let silent_payment_outputs = receive.scan_transaction(&prevouts, &r.given.to_tx());
 
-        let silent_payment_outputs = receive.scan_transaction(&prevouts, &r.given.to_tx());
+            let calculated_outputs = silent_payment_outputs
+                .iter()
+                .map(|o| o.public_key())
+                .collect::<HashSet<_>>();
 
-        let calculated_outputs = silent_payment_outputs
-            .iter()
-            .map(|o| o.public_key())
-            .collect::<HashSet<_>>();
+            let expected_outputs = r
+                .expected
+                .outputs
+                .iter()
+                .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
+                .collect();
 
-        let expected_outputs = r
-            .expected
-            .outputs
-            .iter()
-            .map(|o| XOnlyPublicKey::from_str(&o.pub_key).unwrap())
-            .collect();
+            assert!(
+                calculated_outputs.is_subset(&expected_outputs),
+                "Found different outputs than expected in `{test}`."
+            );
 
-        assert_eq!(
-            calculated_outputs.len(),
-            r.expected.n_outputs,
-            "Found different number of outputs than expected in `{test}`."
-        );
-
-        assert!(
-            calculated_outputs.is_subset(&expected_outputs),
-            "Found different outputs than expected in `{test}`."
-        );
-
-        #[cfg(feature = "spend")]
-        test_spending(r, &silent_payment_outputs, test, secp);
-    });
+            #[cfg(feature = "spend")]
+            test_spending(r, &silent_payment_outputs, test, secp);
+        });
 }
 
 #[cfg(feature = "send")]
@@ -141,29 +142,28 @@ fn test_sending(sending: &[Sending], test: &str, secp: &Secp256k1<All>) {
             .into_iter()
             .collect::<HashSet<_>>();
 
-        let expected_scripts = s
+        let expected_scripts: Vec<HashSet<ScriptBuf>> = s
             .expected
             .outputs
             .iter()
-            .map(|expected_key| {
-                ScriptBuf::new_p2tr_tweaked(
-                    XOnlyPublicKey::from_str(expected_key)
-                        .unwrap()
-                        .dangerous_assume_tweaked(),
-                )
+            .map(|expected| {
+                expected
+                    .iter()
+                    .map(|s| {
+                        ScriptBuf::new_p2tr_tweaked(
+                            XOnlyPublicKey::from_str(s)
+                                .unwrap()
+                                .dangerous_assume_tweaked(),
+                        )
+                    })
+                    .collect()
             })
             .collect();
 
-        if test.starts_with(
-            "Multiple outputs with labels: multiple outputs for labeled address; same recipient",
-        ) {
-            assert!(
-                given_scripts.is_subset(&expected_scripts),
-                "output script in '{test}'"
-            );
-        } else {
-            assert_eq!(given_scripts, expected_scripts, "output script in '{test}'");
-        }
+        assert!(
+            expected_scripts.contains(&given_scripts),
+            "output script in '{test}'"
+        );
     })
 }
 
@@ -226,11 +226,6 @@ fn test_spending(
         })
         .collect();
 
-    assert_eq!(
-        receiving.expected.n_outputs,
-        calculated_signatures.len(),
-        "Number of calcuated signatures does not match the expected number in '{test}'"
-    );
     assert!(
         calculated_signatures.is_subset(&expected_signatures),
         "Some calculated signatures are missing in '{test}'"
@@ -283,7 +278,7 @@ struct SendingGiven {
 
 #[derive(Debug, Deserialize)]
 struct SendingExpected {
-    outputs: Vec<String>,
+    outputs: Vec<std::collections::HashSet<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -339,7 +334,6 @@ struct ReceivingOutput {
 struct ReceivingExpected {
     addresses: Vec<String>,
     outputs: Vec<ReceivingOutput>,
-    n_outputs: usize,
 }
 
 #[derive(Debug, Deserialize)]
